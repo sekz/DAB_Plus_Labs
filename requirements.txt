@@ -1,0 +1,51 @@
+# DAB+ Labs - Python Requirements
+# สำหรับ Raspberry Pi OS Bookworm
+
+# หมายเหตุ: packages ต่อไปนี้ควรติดตั้งผ่าน apt ก่อน:
+# sudo apt install python3-pyqt5 python3-pyqt5.qtmultimedia
+# sudo apt install python3-matplotlib python3-scipy python3-numpy
+# sudo apt install python3-requests python3-json
+
+# RTL-SDR Python bindings (ต้องคอมไพล์)
+pyrtlsdr==0.2.93
+
+# Audio processing (สำรอง ถ้า apt ไม่มี)
+soundfile==0.12.1
+librosa==0.10.1
+
+# Database สำหรับบันทึกข้อมูล
+sqlite3  # มาพร้อม Python แล้ว
+
+# Configuration และ logging
+configparser  # มาพร้อม Python แล้ว
+logging  # มาพร้อม Python แล้ว
+
+# สำหรับการจัดการไฟล์และเวลา
+pathlib  # มาพร้อม Python แล้ว
+datetime  # มาพร้อม Python แล้ว
+json  # มาพร้อม Python แล้ว
+
+# Network และ HTTP (ถ้าต้องการเชื่อมต่อ API)
+requests  # ใช้ apt: python3-requests
+
+# สำหรับการประมวลผลสัญญาณ (ถ้า apt ไม่พอ)
+# scipy>=1.9.0  # ใช้ apt: python3-scipy
+# numpy>=1.21.0  # ใช้ apt: python3-numpy
+
+# สำหรับการสร้างกราฟ (ถ้า apt ไม่พอ)
+# matplotlib>=3.5.0  # ใช้ apt: python3-matplotlib
+
+# Threading และ multiprocessing (มาพร้อม Python)
+threading  # มาพร้อม Python แล้ว
+multiprocessing  # มาพร้อม Python แล้ว
+
+# System และ OS operations
+os  # มาพร้อม Python แล้ว
+sys  # มาพร้อม Python แล้ว
+subprocess  # มาพร้อม Python แล้ว
+
+# การประมวลผลข้อมูลขั้นสูง (optional)
+# pandas>=1.4.0  # ติดตั้งถ้าจำเป็น: pip install pandas
+
+# Development และ testing (optional)
+# pytest>=7.0.0  # สำหรับ testing: pip install pytest
