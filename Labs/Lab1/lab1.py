@@ -12,7 +12,6 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout
                             QWidget, QPushButton, QTextEdit, QLabel, QProgressBar)
 from PyQt5.QtCore import QTimer, QThread, pyqtSignal, Qt
 from PyQt5.QtGui import QFont
-from PyQt5.QtCore import QT_VERSION_STR
 import logging
 
 # ตั้งค่า logging

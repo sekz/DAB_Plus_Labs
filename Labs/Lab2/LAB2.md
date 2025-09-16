@@ -233,8 +233,8 @@ class AudioPlayer(QWidget):
         
         # ปุ่มควบคุม
         control_layout = QHBoxLayout()
-        self.play_btn = QPushButton("▶️ เล่น")
-        self.stop_btn = QPushButton("⏹️ หยุด")
+        self.play_btn = QPushButton(" เล่น")
+        self.stop_btn = QPushButton(" หยุด")
         self.play_btn.setMinimumSize(80, 50)
         self.stop_btn.setMinimumSize(80, 50)
         
@@ -244,7 +244,7 @@ class AudioPlayer(QWidget):
         
         # Volume control
         volume_layout = QHBoxLayout()
-        volume_layout.addWidget(QLabel("🔊 เสียง:"))
+        volume_layout.addWidget(QLabel(" เสียง:"))
         self.volume_slider = QSlider(Qt.Horizontal)
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(70)
@@ -326,7 +326,7 @@ class MetadataWidget(QWidget):
         slideshow_layout.addWidget(self.slideshow_label)
         
         # ปุ่มบันทึกรูป
-        self.save_image_btn = QPushButton("💾 บันทึกรูป")
+        self.save_image_btn = QPushButton(" บันทึกรูป")
         self.save_image_btn.setMinimumSize(120, 40)
         slideshow_layout.addWidget(self.save_image_btn)
         
@@ -374,10 +374,10 @@ def setup_ui(self):
     
     # ปุ่มควบคุม
     button_layout = QHBoxLayout()
-    self.start_btn = QPushButton("🚀 เริ่ม welle.io")
-    self.scan_btn = QPushButton("🔍 สแกนสถานี")
-    self.play_btn = QPushButton("▶️ เล่น")
-    self.record_btn = QPushButton("⏺️ บันทึก")
+    self.start_btn = QPushButton(" เริ่ม welle.io")
+    self.scan_btn = QPushButton(" สแกนสถานี")
+    self.play_btn = QPushButton(" เล่น")
+    self.record_btn = QPushButton(" บันทึก")
     
     # ตั้งขนาดปุ่มสำหรับหน้าจอสัมผัส
     for btn in [self.start_btn, self.scan_btn, self.play_btn, self.record_btn]:
@@ -446,20 +446,20 @@ def setup_ui(self):
 
 ### 2. การทำงานของระบบ:
 ```
-🚀 เริ่ม welle.io...
-✅ welle.io เริ่มต้นสำเร็จ
+ เริ่ม welle.io...
+ welle.io เริ่มต้นสำเร็จ
 
-🔍 กำลังสแกนสถานี DAB+...
-📻 พบสถานี: Thai PBS Radio (174.928 MHz)
-📻 พบสถานี: NBT Radio (176.640 MHz)
-📻 พบสถานี: Voice TV Radio (178.352 MHz)
+ กำลังสแกนสถานี DAB+...
+ พบสถานี: Thai PBS Radio (174.928 MHz)
+ พบสถานี: NBT Radio (176.640 MHz)
+ พบสถานี: Voice TV Radio (178.352 MHz)
 
-▶️ เริ่มเล่นเสียง: Thai PBS Radio
-🎵 กำลังเล่น: เพลงไทย - ศิลปินไทย
-🖼️ รับ slideshow: โลโก้ Thai PBS
+ เริ่มเล่นเสียง: Thai PBS Radio
+ กำลังเล่น: เพลงไทย - ศิลปินไทย
+️ รับ slideshow: โลโก้ Thai PBS
 
-⏺️ เริ่มบันทึก...
-💾 บันทึกลง: recordings/thai_pbs_20241208_143000.wav
+ เริ่มบันทึก...
+ บันทึกลง: recordings/thai_pbs_20241208_143000.wav
 ```
 
 ### 3. ไฟล์ที่สร้างขึ้น:

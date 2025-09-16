@@ -53,15 +53,15 @@ chmod 755 ~/DAB_Recordings/*
 ### 1. ทำความเข้าใจ Recording Workflow
 
 ```
-📅 Schedule Management
+ Schedule Management
     ↓
-🎯 Target Selection (Station + Time)
+ Target Selection (Station + Time)
     ↓  
-🔴 Recording Process (Audio + Metadata + Slideshow)
+ Recording Process (Audio + Metadata + Slideshow)
     ↓
-💾 File Organization & Storage
+ File Organization & Storage
     ↓
-📊 Playback & Export
+ Playback & Export
 ```
 
 ### 2. เรียกใช้งาน Lab GUI
@@ -305,7 +305,7 @@ class ScheduleWidget(QWidget):
         add_layout.addWidget(self.repeat_combo, 2, 3)
         
         # Add button
-        self.add_schedule_btn = QPushButton("➕ เพิ่มตารางการบันทึก")
+        self.add_schedule_btn = QPushButton(" เพิ่มตารางการบันทึก")
         self.add_schedule_btn.setMinimumSize(200, 50)
         self.add_schedule_btn.setStyleSheet("""
             QPushButton {
@@ -342,7 +342,7 @@ class RecordingListWidget(QWidget):
         self.station_filter.addItem("ทุกสถานี")
         self.station_filter.setMinimumHeight(40)
         
-        self.refresh_btn = QPushButton("🔄 รีเฟรช")
+        self.refresh_btn = QPushButton(" รีเฟรช")
         self.refresh_btn.setMinimumSize(100, 40)
         
         filter_layout.addWidget(QLabel("วันที่:"))
@@ -362,10 +362,10 @@ class RecordingListWidget(QWidget):
         # Playback controls
         playback_layout = QHBoxLayout()
         
-        self.play_btn = QPushButton("▶️ เล่น")
-        self.stop_btn = QPushButton("⏹️ หยุด")
-        self.export_btn = QPushButton("📤 ส่งออก")
-        self.delete_btn = QPushButton("🗑️ ลบ")
+        self.play_btn = QPushButton(" เล่น")
+        self.stop_btn = QPushButton(" หยุด")
+        self.export_btn = QPushButton(" ส่งออก")
+        self.delete_btn = QPushButton(" ลบ")
         
         for btn in [self.play_btn, self.stop_btn, self.export_btn, self.delete_btn]:
             btn.setMinimumSize(100, 50)
@@ -404,21 +404,21 @@ class RecordingListWidget(QWidget):
 
 ### 2. การทำงานของระบบ:
 ```
-📅 ตารางการบันทึกวันนี้:
+ ตารางการบันทึกวันนี้:
    09:00-10:00: Thai PBS Morning News
    12:00-13:00: NBT Lunch Hour
    18:00-19:00: Voice TV Evening Report
 
-🔴 09:00 - เริ่มบันทึก Thai PBS Morning News
-📊 สถานะ: กำลังบันทึก... (15:32 / 60:00)
-🎵 เพลงปัจจุบัน: เพลงไทย - ศิลปินไทย
-🖼️ รับ slideshow: ข่าวเช้า (3/12 images)
+ 09:00 - เริ่มบันทึก Thai PBS Morning News
+ สถานะ: กำลังบันทึก... (15:32 / 60:00)
+ เพลงปัจจุบัน: เพลงไทย - ศิลปินไทย
+️ รับ slideshow: ข่าวเช้า (3/12 images)
 
-✅ 10:00 - บันทึกเสร็จสิ้น
-💾 ไฟล์: Thai_PBS_20241208_090000.wav (142 MB)
-📊 คุณภาพ: 192 kbps, 48 kHz, Stereo
-🖼️ Slideshow: 12 images บันทึกแล้ว
-📝 Metadata: 45 entries บันทึกแล้ว
+ 10:00 - บันทึกเสร็จสิ้น
+ ไฟล์: Thai_PBS_20241208_090000.wav (142 MB)
+ คุณภาพ: 192 kbps, 48 kHz, Stereo
+️ Slideshow: 12 images บันทึกแล้ว
+ Metadata: 45 entries บันทึกแล้ว
 ```
 
 ### 3. ไฟล์ที่สร้างขึ้น:

@@ -390,9 +390,9 @@ class RealTimeAnalysisWidget(QWidget):
         # Status indicators
         status_layout = QGridLayout()
         
-        self.sync_indicator = self.create_indicator("🔄 Sync", "red")
-        self.signal_indicator = self.create_indicator("📶 Signal", "yellow")
-        self.quality_indicator = self.create_indicator("✓ Quality", "green")
+        self.sync_indicator = self.create_indicator(" Sync", "red")
+        self.signal_indicator = self.create_indicator(" Signal", "yellow")
+        self.quality_indicator = self.create_indicator(" Quality", "green")
         
         status_layout.addWidget(self.sync_indicator, 0, 0)
         status_layout.addWidget(self.signal_indicator, 0, 1)
@@ -463,30 +463,30 @@ class RealTimeAnalysisWidget(QWidget):
 
 ### 2. การทำงานของระบบ:
 ```
-🔬 DAB+ Signal Analyzer เริ่มต้นแล้ว
-📡 ความถี่: 174.928 MHz (Thai PBS)
-📊 Sample Rate: 2.048 MSps
+ DAB+ Signal Analyzer เริ่มต้นแล้ว
+ ความถี่: 174.928 MHz (Thai PBS)
+ Sample Rate: 2.048 MSps
 
-📈 การวิเคราะห์เริ่มต้น...
-🔄 ตรวจจับ Frame Sync... ✅ พบแล้ว
-📶 RSSI: -51.2 dBm
-📊 SNR: 22.8 dB (ยอดเยี่ยม)
-❌ BER: 1.2e-5 (ต่ำมาก)
-📡 MER: 18.5 dB
-🎯 I/Q Imbalance: 0.3 dB
+ การวิเคราะห์เริ่มต้น...
+ ตรวจจับ Frame Sync...  พบแล้ว
+ RSSI: -51.2 dBm
+ SNR: 22.8 dB (ยอดเยี่ยม)
+ BER: 1.2e-5 (ต่ำมาก)
+ MER: 18.5 dB
+ I/Q Imbalance: 0.3 dB
 
-🔍 OFDM Structure:
+ OFDM Structure:
    - Carriers Active: 1536/2048
    - Guard Interval: 246 μs
    - Symbol Rate: 2000 Hz
    - Frame Sync: Strong (95%)
 
-📊 Ensemble Analysis:
+ Ensemble Analysis:
    - Services Found: 3
    - Total Bitrate: 576 kbps
    - Audio Quality: Excellent
    
-💾 รายงานส่งออกแล้ว:
+ รายงานส่งออกแล้ว:
    - signal_analysis_20241208.pdf
    - spectrum_data_20241208.csv
    - analysis_results_20241208.json

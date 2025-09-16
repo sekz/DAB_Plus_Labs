@@ -26,7 +26,7 @@ footer: 'Digital Audio Broadcasting Plus Learning Project'
 ### พร้อม RTL-SDR และ PyQt5
 
 ---
-เวอร์ชัน 1.0 | ธันวาคม 2024
+เวอร์ชัน 1.1 | กันยายน 2025
 
 ---
 
@@ -88,7 +88,7 @@ footer: 'Digital Audio Broadcasting Plus Learning Project'
 
 | Lab | หัวข้อ | เวลา | ระดับ |
 |-----|--------|------|--------|
-| **0** | Introduction to DAB+ และ PyQt5 | 60 นาที | ⭐ |
+| **0** | Introduction to DAB+, Python และ PyQt5 | 75 นาที | ⭐ |
 | **1** | การติดตั้งและทดสอบ RTL-SDR | 90 นาที | ⭐⭐ |
 | **2** | การใช้งาน welle.io ผ่าน Python | 120 นาที | ⭐⭐⭐ |
 | **3** | การควบคุม RTL-SDR โดยตรง | 120 นาที | ⭐⭐⭐ |
@@ -96,38 +96,311 @@ footer: 'Digital Audio Broadcasting Plus Learning Project'
 | **5** | สร้าง DAB+ Program Recorder | 150 นาที | ⭐⭐⭐⭐ |
 | **6** | สร้าง DAB+ Signal Analyzer | 180 นาที | ⭐⭐⭐⭐⭐ |
 
-**รวมเวลา**: ~12 ชั่วโมง
+**รวมเวลา**: ~12.25 ชั่วโมง
 
 ---
 
-# 🎓 LAB 0: Introduction to DAB+ และ PyQt5
+# 🎓 LAB 0: Introduction to DAB+, Python และ PyQt5
+## 🕒 เวลารวม: 75 นาที (1 ชั่วโมง 15 นาที)
+
+### 📋 ภาพรวมเนื้อหา
+**เป็นแล็บพื้นฐานสำหรับมือใหม่** ที่ยังไม่เคยใช้ Python หรือไม่รู้จัก DAB+
+
+---
+
+# 📡 ส่วนที่ 1: DAB+ Technology (15 นาที)
 
 <div class="columns">
 <div>
 
-## 📻 DAB+ vs FM (15 นาที)
-- **เสียงดิจิทัล** ไม่มี static
-- **Metadata** ชื่อเพลง, ศิลปิน
-- **Slideshow** รูปภาพ album art
-- **ประสิทธิภาพคลื่น** multiplexing
+## 🆚 DAB+ vs FM Radio
+- **เสียงดิจิทัล** ไม่มี static หรือสัญญาณรบกวน
+- **คุณภาพคงที่** ไม่ขึ้นกับระยะทาง
+- **Metadata** ชื่อเพลง, ศิลปิน แบบ real-time
+- **MOT Slideshow** รูปภาพ album art
+- **Multiplexing** หลายสถานีใช้ความถี่เดียว
 
 </div>
 <div>
 
-## 🖥️ PyQt5 พื้นฐาน (45 นาที)
-- Widgets: Labels, Buttons, Input
-- **Signals & Slots** การสื่อสาร
-- **Layouts** การจัดเรียง
-- **Touch UI** สำหรับหน้าจอสัมผัส
+## 🇹🇭 DAB+ ในประเทศไทย (2025)
+**การทดลองปัจจุบัน:**
+- **Block 9A** (202.928 MHz) - กรุงเทพฯ
+  - สถานีธรรมะเพื่อประชาชน
+  - สถานีวิทยุสันติ
+- **Block 6C** (185.360 MHz) - ขอนแก่น
+  - สถานีวิทยุขอนแก่นมหานคร
 
 </div>
 </div>
 
-### ✅ TODO: 4 จุดง่ายๆ ให้เติมโค้ด
-- อ่านชื่อจาก LineEdit
-- แสดงข้อความใน TextEdit
-- อัพเดท ProgressBar
-- เริ่ม Timer
+## 🛠️ เทคโนโลยีที่ใช้
+- **RTL-SDR**: ตัวรับสัญญาณ USB (~500-1500 บาท)
+- **welle.io**: DAB+ decoder แบบ open source
+- **Python**: สำหรับควบคุมและประมวลผล
+
+---
+
+# 🐍 ส่วนที่ 2: Python สำหรับมือใหม่ (30 นาที)
+
+<div class="columns">
+<div>
+
+## 📝 Python Basics
+```python
+# Variables และ Data Types
+name = "สวัสดี"       # String
+age = 25              # Integer
+height = 175.5        # Float
+is_student = True     # Boolean
+
+# Lists และการใช้งาน
+fruits = ["แอปเปิ้ล", "กล้วย", "ส้ม"]
+fruits.append("มะม่วง")
+print(len(fruits))    # แสดง: 4
+```
+
+</div>
+<div>
+
+## 🔄 Control Flow
+```python
+# Loops (การวนซ้ำ)
+for fruit in fruits:
+    print("ผลไม้:", fruit)
+
+# Conditions (เงื่อนไข)
+if age >= 18:
+    print("เป็นผู้ใหญ่แล้ว")
+else:
+    print("เป็นเด็ก")
+
+# Functions (ฟังก์ชัน)
+def say_hello(name):
+    return "สวัสดี " + name
+```
+
+</div>
+</div>
+
+---
+
+# 🐍 Python: Classes และ Hardware Integration
+
+<div class="columns">
+<div>
+
+## 🏗️ Object-Oriented Programming
+```python
+class DABStation:
+    def __init__(self, name, frequency):
+        self.name = name
+        self.frequency = frequency
+        self.is_playing = False
+
+    def start_playing(self):
+        self.is_playing = True
+        print(f"เริ่มเล่น {self.name}")
+
+    def stop_playing(self):
+        self.is_playing = False
+```
+
+</div>
+<div>
+
+## 🔧 Raspberry Pi GPIO
+```python
+try:
+    import RPi.GPIO as GPIO
+    import time
+
+    # ตั้งค่า GPIO pin 18
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(18, GPIO.OUT)
+
+    # กะพริบ LED
+    GPIO.output(18, GPIO.HIGH)
+    time.sleep(1)
+    GPIO.output(18, GPIO.LOW)
+
+except ImportError:
+    print("ทำงานบนคอมพิวเตอร์ทั่วไป")
+```
+
+</div>
+</div>
+
+---
+
+# 🖥️ ส่วนที่ 3: PyQt5 Hands-on (30 นาที)
+
+<div class="columns">
+<div>
+
+## 🧩 PyQt5 Components
+```python
+from PyQt5.QtWidgets import *
+import sys
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setup_ui()
+
+    def setup_ui(self):
+        # สร้าง central widget
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+
+        # สร้าง layout
+        layout = QVBoxLayout(central_widget)
+```
+
+</div>
+<div>
+
+## 📱 Touch-Friendly Design
+```python
+# ปุ่มขนาดใหญ่สำหรับสัมผัส
+button = QPushButton("กดที่นี่")
+button.setMinimumSize(120, 60)
+
+# Font ขนาดใหญ่
+font = QFont()
+font.setPointSize(14)
+button.setFont(font)
+
+# CSS Styling
+button.setStyleSheet("""
+    QPushButton {
+        border-radius: 8px;
+        background: #3498db;
+        color: white;
+    }
+""")
+```
+
+</div>
+</div>
+
+---
+
+# 🖥️ PyQt5: Signals & Slots
+
+<div class="columns">
+<div>
+
+## 🔗 Event Handling
+```python
+class DABPlayerWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setup_ui()
+        self.setup_connections()
+
+    def setup_connections(self):
+        # เชื่อม signals กับ slots
+        self.play_button.clicked.connect(self.on_play)
+        self.volume_slider.valueChanged.connect(self.on_volume_change)
+
+    def on_play(self):
+        print("เริ่มเล่นเพลง!")
+```
+
+</div>
+<div>
+
+## ⏱️ QTimer และ Updates
+```python
+from PyQt5.QtCore import QTimer
+
+class SignalMonitor(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        # Timer สำหรับ real-time update
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_signal)
+        self.timer.start(1000)  # อัพเดททุก 1 วินาที
+
+    def update_signal(self):
+        # อัพเดทค่าสัญญาณ
+        signal_strength = self.get_signal_strength()
+        self.signal_bar.setValue(signal_strength)
+```
+
+</div>
+</div>
+
+---
+
+# 🎯 LAB 0: Demo Applications
+
+<div class="columns">
+<div>
+
+## 📱 Demo 1: Basic Widgets
+- **QLabel** แสดงข้อความและรูปภาพ
+- **QPushButton** ปุ่มกดขนาดใหญ่
+- **QLineEdit** ช่องใส่ข้อความ
+- **QTextEdit** พื้นที่ข้อความหลายบรรทัด
+- **QSlider** แถบเลื่อนค่า
+- **QProgressBar** แสดงความคืบหน้า
+
+</div>
+<div>
+
+## 📱 Demo 2: Touch Interface
+- **ขนาดปุ่ม** อย่างน้อย 60x40 pixels
+- **Font Size** 12-16pt สำหรับหน้าจอ 7"
+- **Visual Feedback** เปลี่ยนสีเมื่อกด
+- **Layout Management** responsive design
+- **Error Handling** การจัดการข้อผิดพลาด
+
+</div>
+</div>
+
+### ✅ สิ่งที่นักเรียนต้องเติม:
+1. **อ่านชื่อ** จาก QLineEdit และแสดงใน QLabel
+2. **ควบคุม QProgressBar** ด้วย QSlider
+3. **เริ่ม/หยุด QTimer** และแสดงเวลาปัจจุบัน
+4. **เปลี่ยนสี** ของปุ่มเมื่อกด (CSS styling)
+
+---
+
+# 🏆 LAB 0: ผลลัพธ์ที่คาดหวัง
+
+<div class="columns">
+<div>
+
+## 🎯 ความรู้ที่ได้รับ
+**DAB+ Technology:**
+- เข้าใจความแตกต่างจาก FM
+- รู้จักเทคโนโลยี RTL-SDR
+- เข้าใจ DAB+ ในประเทศไทย
+
+**Python Programming:**
+- Variables, functions, classes
+- File handling และ modules
+- GPIO programming พื้นฐาน
+
+</div>
+<div>
+
+## 🛠️ Skills ที่พร้อมใช้
+**PyQt5 GUI Development:**
+- Widget การใช้งานพื้นฐาน
+- Signals & Slots system
+- Touch-friendly UI design
+- Real-time updates ด้วย QTimer
+
+**เตรียมพร้อม** สำหรับ Labs ขั้นสูง!
+
+</div>
+</div>
+
+### 🚀 Next Step: LAB 1 - RTL-SDR Hardware Setup
 
 ---
 

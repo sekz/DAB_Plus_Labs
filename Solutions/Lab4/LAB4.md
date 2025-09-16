@@ -16,7 +16,7 @@
 - **Raspberry Pi 4** พร้อม RTL-SDR V4 dongle
 - **หน้าจอสัมผัส HDMI 7"** สำหรับควบคุม
 - **เสาอากาศ DAB/FM** ที่มีประสิทธิภาพสูง
-- **การเชื่อมต่อเน็ต** สำหรับข้อมูลสถานี
+- **การเชื่อมต่อเน็ต** สำหรับติดตั้ง dependencies
 
 ## การเตรียมระบบ
 
@@ -110,7 +110,7 @@ class DatabaseManager:
         pass
 ```
 
-#### 2. DABScanner - การสแกนอัตโนมัติ:
+#### 2. DABScanner - การสแกนสถานีอัตโนมัติ:
 
 ```python
 class DABScanner(QThread):
@@ -198,7 +198,7 @@ class StationListWidget(QWidget):
         layout.addLayout(filter_layout)
 ```
 
-#### 4. SignalQualityMonitor - ติดตามคุณภาพ:
+#### 4. SignalQualityMonitor - ติดตามคุณภาพสัญญาณ:
 
 ```python
 class SignalQualityMonitor(QWidget):
@@ -272,7 +272,7 @@ class ScanHistoryWidget(QWidget):
     
     def load_history(self):
         """โหลดประวัติการสแกน"""
-        # TODO: เติมโค้ดโหลดจากฐานข้อมูล
+        # TODO: เติมโค้ดโหลดข้อมูลจากฐานข้อมูล
         pass
 ```
 
@@ -287,8 +287,8 @@ class ScanHistoryWidget(QWidget):
 
 ### 1. GUI Application ที่สมบูรณ์:
 - หน้าต่างแบ่งเป็น 4 ส่วน: scanner, stations, quality, history
-- การสแกนอัตโนมัติพร้อม progress indicator
-- รายการสถานีที่สามารถกรอง filter ได้
+- การสแกนสถานีแบบ progress indicator
+- รายการสถานีที่สามารถ filter ได้
 - การติดตามคุณภาพสัญญาณแบบ real-time
 
 ### 2. การทำงานของระบบ:
@@ -314,7 +314,7 @@ class ScanHistoryWidget(QWidget):
 
 ### 3. ไฟล์ที่สร้างขึ้น:
 - `dab_stations.db`: ฐานข้อมูล SQLite
-- `scan_export_*.csv`: ไฟล์ส่งออกข้อมูล
+- `scan_export_*.csv`: ไฟล์ส่งออกข้อมูลสถานี
 - `quality_log_*.json`: บันทึกคุณภาพสัญญาณ
 
 ## การแก้ไขปัญหา
@@ -323,7 +323,7 @@ class ScanHistoryWidget(QWidget):
 **วิธีแก้**:
 ```python
 # ปรับ timeout สำหรับแต่ละความถี่
-scan_timeout = 5  # วินาที แทน 10 วินาที
+scan_timeout = 5  # วินาที (แทน 10 วินาที)
 
 # ใช้ threading pool
 from concurrent.futures import ThreadPoolExecutor
@@ -352,8 +352,8 @@ conn.execute("PRAGMA journal_mode=WAL")
    - ตอบ: เพื่อเก็บประวัติและสามารถค้นหา filter ได้อย่างมีประสิทธิภาพ
 
 3. **Signal Quality Parameters มีความหมายอย่างไร?**
-   - ตอบ: RSSI = ความแรงสัญญาณ, SNR = สัญญาณต่อสัญญาณรบกวน, BER = อัตราข้อผิดพลาด
+   - ตอบ: RSSI = ความแรงสัญญาณ, SNR = สัดส่วนสัญญาณต่อสัญญาณรบกวน, BER = อัตราข้อผิดพลาด
 
 ---
 
-**หมายเหตุ**: Lab นี้ต้องการเสาอากาศที่ดีและสถานี DAB+ ในพื้นที่เพื่อให้การสแกนได้ผลลัพธ์ที่ดี
+**หมายเหตุ**: Lab นี้ต้องการการสื่อสารกับอุปกรณ์และสถานี DAB+ ในพื้นที่เพื่อให้ผลลัพธ์ที่ดี
