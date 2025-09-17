@@ -437,6 +437,68 @@ DAB_Recordings/
     └── recording_log_20241208.txt
 ```
 
+## 🎯 Trap Exercises
+
+### Trap 5.1: Advanced Scheduling System
+**เป้าหมาย**: สร้างระบบจัดตารางเวลาการบันทึกที่ซับซ้อนและยืดหยุ่น
+
+**โจทย์**:
+1. Implement recurring schedule patterns (daily, weekly, weekdays only)
+2. สร้าง conflict detection และ resolution system
+3. เพิ่ม priority-based recording (สำคัญมากบันทึกก่อน)
+4. สร้าง automatic schedule adjustment เมื่อโปรแกรมเปลี่ยนแปลง
+
+**Hints**:
+- ใช้ cron-like expressions สำหรับ recurring patterns
+- Check overlapping time ranges สำหรับ conflict detection
+- Priority queue สำหรับ scheduling conflicts
+- Monitor DAB+ schedule changes แล้วแจ้งเตือน
+
+### Trap 5.2: Multi-format Recording และ Optimization
+**เป้าหมาย**: พัฒนาระบบบันทึกที่รองรับหลายรูปแบบและประหยัดพื้นที่
+
+**โจทย์**:
+1. สร้าง configurable audio encoding (WAV, MP3, FLAC, OGG)
+2. Implement real-time audio level monitoring และ AGC
+3. สร้าง automatic file compression และ archiving
+4. เพิ่ม silence detection เพื่อตัดช่วงเงียบออก
+
+**Hints**:
+- ใช้ ffmpeg subprocess สำหรับ encoding
+- Monitor peak levels ด้วย audio analysis
+- Use separate thread สำหรับ compression
+- Analyze audio amplitudes สำหรับ silence detection
+
+### Trap 5.3: Metadata และ Content Analysis
+**เป้าหมาย**: วิเคราะห์และจัดระเบียบเนื้อหาที่บันทึกได้อย่างชาญฉลาด
+
+**โจทย์**:
+1. สร้าง automatic track segmentation จาก DLS metadata
+2. Implement slideshow extraction และ organization
+3. สร้าง content analysis (music vs news vs ads)
+4. เพิ่ม search และ tagging system สำหรับบันทึก
+
+**Hints**:
+- Parse DLS "Now Playing" เพื่อแยก tracks
+- Monitor MOT data สำหรับ slideshow images
+- Analyze audio features เพื่อแยกประเภทเนื้อหา
+- Full-text search ใน metadata และ track info
+
+### Trap 5.4: Distributed Recording และ Backup System
+**เป้าหมาย**: สร้างระบบบันทึกแบบกระจายและสำรองข้อมูลอัตโนมัติ
+
+**โจทย์**:
+1. สร้าง network recording coordination (หลาย RTL-SDR)
+2. Implement automatic backup ไปยัง cloud storage
+3. สร้าง redundant recording สำหรับโปรแกรมสำคัญ
+4. เพิ่ม remote monitoring และ control capabilities
+
+**Hints**:
+- ใช้ network protocols สำหรับ coordinate multiple devices
+- API integration สำหรับ cloud storage (Google Drive, Dropbox)
+- Multiple RTL-SDR devices record same program
+- Web interface สำหรับ remote access
+
 ## การแก้ไขปัญหา
 
 ### ปัญหา 1: พื้นที่เก็บข้อมูลไม่พอ

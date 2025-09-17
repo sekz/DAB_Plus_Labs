@@ -323,6 +323,68 @@ class RTLSDRControlPanel(QWidget):
 - `spectrum_plot_*.png`: กราฟที่บันทึก
 - `signal_analysis_*.json`: ผลการวิเคราะห์
 
+## 🎯 Trap Exercises
+
+### Trap 3.1: IQ Data Processing Challenge
+**เป้าหมาย**: เข้าใจการประมวลผล IQ samples และ complex signal processing
+
+**โจทย์**:
+1. รับ IQ samples จาก RTL-SDR และวิเคราะห์ลักษณะของข้อมูล
+2. คำนวณ magnitude และ phase จาก complex samples
+3. ใช้ windowing functions (Hanning, Hamming, Blackman) เพื่อลด spectral leakage
+4. เปรียบเทียบผลต่างของ window functions ต่อคุณภาพ spectrum
+
+**Hints**:
+- IQ data เป็น complex numbers: `samples = I + jQ`
+- Magnitude: `|samples|`, Phase: `∠samples`
+- Window functions ช่วยลด side lobes ใน FFT
+- ใช้ `scipy.signal.windows` สำหรับ window functions
+
+### Trap 3.2: Real-time Spectrum Analysis Optimization
+**เป้าหมาย**: สร้าง spectrum analyzer ที่มีประสิทธิภาพสูง
+
+**โจทย์**:
+1. ออกแบบ circular buffer สำหรับเก็บ samples แบบ real-time
+2. ใช้ overlap-add method เพื่อให้ spectrum smooth
+3. ใช้ threading เพื่อแยก data acquisition และ GUI update
+4. Implement peak detection และ signal classification
+
+**Hints**:
+- Circular buffer ช่วยประหยัด memory
+- Overlap 50% ทำให้ spectrum เรียบขึ้น
+- ใช้ QTimer สำหรับ GUI updates
+- Peak detection: ใช้ `scipy.signal.find_peaks`
+
+### Trap 3.3: Advanced Signal Analysis
+**เป้าหมาย**: วิเคราะห์สัญญาณในหลายมิติ
+
+**โจทย์**:
+1. สร้าง waterfall display (time vs frequency vs power)
+2. Implement bandpass filtering สำหรับสัญญาณเฉพาะ
+3. คำนวณ SFDR (Spurious Free Dynamic Range)
+4. สร้าง automatic gain control (AGC) algorithm
+
+**Hints**:
+- Waterfall: ใช้ 2D array เก็บ spectrum history
+- Bandpass filter: ใช้ `scipy.signal.butter`
+- SFDR = ความต่างระหว่าง signal กับ spurious สูงสุด
+- AGC: ปรับ gain ตาม signal level โดยอัตโนมัติ
+
+### Trap 3.4: GUI Performance และ Threading
+**เป้าหมาย**: สร้าง responsive GUI สำหรับการประมวลผล real-time
+
+**โจทย์**:
+1. ใช้ QThread สำหรับ RTL-SDR data acquisition
+2. Implement thread-safe communication ระหว่าง worker และ GUI
+3. สร้าง progress indicators และ status monitoring
+4. Handle thread cleanup เมื่อปิดโปรแกรม
+
+**Hints**:
+- ใช้ pyqtSignal สำหรับ thread communication
+- QMutex สำหรับ thread-safe data sharing
+- QProgressBar แสดง processing status
+- Always cleanup threads ใน closeEvent()
+
 ## การแก้ไขปัญหา
 
 ### ปัญหา 1: pyrtlsdr import ไม่ได้

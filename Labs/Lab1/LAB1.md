@@ -355,6 +355,76 @@ sudo apt install xinput-calibrator
 xinput_calibrator
 ```
 
+## 🎯 Trap Exercises LAB 1
+
+### **Trap 1.1: Hardware Detection Challenge**
+หลังรันการตรวจสอบอุปกรณ์ ให้นักเรียน:
+- วิเคราะห์ output จาก `lsusb` และระบุว่า RTL-SDR อยู่ที่ port ไหน
+- อธิบาย Vendor ID (0bda) และ Product ID (2832) ที่เห็น
+- ตรวจสอบว่า device มี permission ที่ถูกต้องหรือไม่
+- อธิบายความหมายของ SYMLINK ใน udev rules
+
+**คำถามเพิ่มเติม:**
+- ทำไม RTL-SDR ถึงปรากฏเป็น "DVB-T" ใน lsusb?
+- ความแตกต่างระหว่าง RTL-SDR V3 และ V4 คืออะไร?
+
+### **Trap 1.2: Driver Permission Investigation**
+หลัง blacklist DVB-T drivers ให้อธิบาย:
+- ทำไมต้อง blacklist dvb_usb_rtl28xxu driver
+- ผลกระทบถ้าไม่ทำการ blacklist (driver conflict)
+- วิธีการตรวจสอบว่า driver ถูก blacklist แล้ว
+- ความแตกต่างระหว่าง modprobe -r และ blacklist
+
+**แบบฝึกหัด:**
+```bash
+# ตรวจสอบ drivers ที่โหลดอยู่
+lsmod | grep -i rtl
+lsmod | grep -i dvb
+
+# ดู blacklist files
+cat /etc/modprobe.d/blacklist-*.conf
+```
+
+### **Trap 1.3: PPM Calibration Analysis**
+หลัง `rtl_test -t` ให้วิเคราะห์:
+- ความหมายของ PPM error ที่แสดง (เช่น +/-50 ppm)
+- ผลกระทบของ PPM error ต่อการรับสัญญาณ DAB+
+- วิธีการ calibrate PPM ด้วย known signal
+- อุณหภูมิส่งผลต่อ crystal frequency อย่างไร
+
+**การทดลอง:**
+```bash
+# ทดสอบ PPM ด้วย known frequency (เช่น FM radio)
+rtl_test -p  # จะแสดง PPM error
+
+# ตั้งค่า PPM correction
+rtl_fm -f 100.5M -p 50  # ถ้า error = +50 ppm
+```
+
+### **Trap 1.4: GUI Threading Challenge**
+ในส่วนการเขียน GUI ให้อธิบาย:
+- ทำไมต้องใช้ QThread สำหรับ RTL-SDR testing
+- ความแตกต่างระหว่าง blocking และ non-blocking calls
+- วิธีการ handle timeout ใน subprocess calls
+- การใช้ signals/slots สำหรับ thread communication
+
+**โค้ดตัวอย่างที่ผิด:**
+```python
+# ❌ ไม่ดี: blocking main thread
+def on_test_button_clicked(self):
+    result = subprocess.run(['rtl_test', '-t'], timeout=30)
+    self.results_text.setText(result.stdout)  # GUI จะค้าง 30 วินาที
+```
+
+**โค้ดที่ถูกต้อง:**
+```python
+# ✅ ดี: ใช้ QThread
+def on_test_button_clicked(self):
+    self.test_thread = RTLSDRTestThread()
+    self.test_thread.test_result.connect(self.update_results)
+    self.test_thread.start()
+```
+
 ## คำถามทบทวน
 
 1. **RTL-SDR คืออะไร และทำงานอย่างไร?**

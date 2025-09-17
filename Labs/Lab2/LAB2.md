@@ -553,6 +553,111 @@ def update_slideshow(self, image_path):
             logger.error(f"Slideshow error: {str(e)}")
 ```
 
+## 🎯 Trap Exercises LAB 2
+
+### **Trap 2.1: DAB+ Frequency Planning**
+ก่อนการ scan ให้นักเรียน:
+- ศึกษาความถี่ DAB+ ในประเทศไทย (Band III: 174-240 MHz)
+- เลือก 2-3 frequencies ที่น่าจะมี signal ในพื้นที่
+- อธิบายความแตกต่างระหว่าง ensemble และ service
+- คำนวณว่า RTL-SDR สามารถรับความถี่ไหนได้บ้าง
+
+**ข้อมูลความถี่:**
+```
+DAB+ ในไทย (ตาม NBTC):
+- Channel 5C: 178.352 MHz
+- Channel 6C: 185.360 MHz
+- Channel 7C: 192.352 MHz
+- Channel 8C: 199.360 MHz
+```
+
+### **Trap 2.2: welle.io Integration Challenge**
+หลังติดตั้ง welle.io ให้วิเคราะห์:
+- ความแตกต่างระหว่าง command line และ GUI mode
+- การ parse output จาก welle.io subprocess
+- วิธีการส่งคำสั่งควบคุมไปยัง welle.io
+- การ handle errors เมื่อ welle.io crash
+
+**แบบฝึกหัด:**
+```bash
+# ทดสอบ welle.io command line
+welle-io -h  # ดู help options
+welle-io -c -D rtl_sdr -C 6C  # ทดสอบ channel 6C
+
+# Monitor output การทำงาน
+welle-io -v 2>&1 | tee welle_output.log
+```
+
+### **Trap 2.3: Audio Routing Investigation**
+เมื่อได้เสียงจาก DAB+ แล้ว ให้ตรวจสอบ:
+- การทำงานของ ALSA vs PulseAudio บน Pi
+- คุณภาพเสียง (sample rate, bit depth) ของ DAB+
+- การจัดการ audio buffer และ latency
+- ความแตกต่างระหว่าง หูฟัง 3.5mm และ HDMI audio
+
+**การทดลอง:**
+```bash
+# ตรวจสอบ audio devices
+aplay -l
+pacmd list-sinks
+
+# ทดสอบ audio routing
+pactl set-default-sink alsa_output.platform-soc_audio.analog-stereo
+
+# Monitor audio levels
+pavucontrol &  # GUI volume control
+alsamixer      # Command line mixer
+```
+
+### **Trap 2.4: Metadata และ Slideshow Analysis**
+ในส่วน metadata handling ให้อธิบาย:
+- โครงสร้างของ PAD (Programme Associated Data)
+- การ decode Dynamic Label Segment (DLS)
+- รูปแบบของ MOT Slideshow (JPEG encoding)
+- การ sync ระหว่าง audio และ visual data
+
+**การทดลอง:**
+```python
+# ตัวอย่าง metadata structure
+metadata_example = {
+    'dls_text': 'ชื่อเพลง - ศิลปิน',
+    'mot_image': '/tmp/slideshow.jpg',
+    'program_type': 'Music',
+    'bitrate': '128 kbps'
+}
+
+# วิเคราะห์ image file
+from PIL import Image
+img = Image.open('/tmp/slideshow.jpg')
+print(f"Image size: {img.size}")
+print(f"Image format: {img.format}")
+```
+
+### **Trap 2.5: GUI Threading และ Performance**
+ในการเขียน GUI ให้วิเคราะห์:
+- ทำไม audio processing ต้องอยู่ใน separate thread
+- การใช้ QTimer vs QThread สำหรับ periodic updates
+- Memory management สำหรับ slideshow images
+- การ optimize GUI สำหรับ Raspberry Pi performance
+
+**Performance Testing:**
+```python
+import psutil
+import time
+
+# Monitor resource usage
+def monitor_performance():
+    process = psutil.Process()
+    cpu_percent = process.cpu_percent()
+    memory_info = process.memory_info()
+    print(f"CPU: {cpu_percent}%, Memory: {memory_info.rss / 1024 / 1024:.1f} MB")
+
+# ทดสอบระหว่าง audio playback
+timer = QTimer()
+timer.timeout.connect(monitor_performance)
+timer.start(5000)  # ทุก 5 วินาที
+```
+
 ## คำถามทบทวน
 
 1. **DAB+ แตกต่างจาก FM อย่างไร?**

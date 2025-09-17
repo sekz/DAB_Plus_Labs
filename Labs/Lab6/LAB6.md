@@ -503,6 +503,68 @@ Reports/
 └── quality_trending_20241208.xlsx
 ```
 
+## 🎯 Trap Exercises
+
+### Trap 6.1: Advanced OFDM Analysis
+**เป้าหมาย**: วิเคราะห์สัญญาณ OFDM ของ DAB+ ในระดับลึก
+
+**โจทย์**:
+1. Implement OFDM symbol synchronization และ timing recovery
+2. สร้าง carrier frequency offset (CFO) detection และ correction
+3. วิเคราะห์ pilot subcarriers สำหรับ channel estimation
+4. คำนวณ PAPR (Peak-to-Average Power Ratio) ของสัญญาณ
+
+**Hints**:
+- ใช้ cross-correlation กับ guard interval สำหรับ sync
+- CFO detection จาก phase rotation ของ pilots
+- Channel response จาก pilot subcarriers
+- PAPR = 10*log10(peak_power/average_power)
+
+### Trap 6.2: Machine Learning-based Signal Classification
+**เป้าหมาย**: ใช้ AI วิเคราะห์และจำแนกสัญญาณอัตโนมัติ
+
+**โจทย์**:
+1. สร้าง feature extraction จาก spectrum และ constellation data
+2. Train classifier เพื่อแยกประเภทสัญญาณ (DAB+, FM, DVB-T)
+3. Implement anomaly detection สำหรับสัญญาณผิดปกติ
+4. สร้าง real-time prediction และ confidence scoring
+
+**Hints**:
+- Features: spectral centroid, bandwidth, constellation variance
+- ใช้ scikit-learn สำหรับ classification algorithms
+- One-class SVM สำหรับ anomaly detection
+- Sliding window prediction สำหรับ real-time analysis
+
+### Trap 6.3: Advanced Visualization และ Reporting
+**เป้าหมาย**: สร้างระบบแสดงผลและรายงานระดับมืออาชีพ
+
+**โจทย์**:
+1. สร้าง interactive 3D visualization (time/frequency/power)
+2. Implement custom dashboard widgets สำหรับ key metrics
+3. สร้าง automated report generation พร้อมกราฟและสถิติ
+4. เพิ่ม export capabilities สำหรับ professional analysis
+
+**Hints**:
+- ใช้ plotly สำหรับ interactive 3D plots
+- Custom QWidget subclasses สำหรับ specialized displays
+- ReportLab หรือ matplotlib สำหรับ PDF generation
+- Export ไป MATLAB format สำหรับ advanced analysis
+
+### Trap 6.4: Multi-Antenna และ Diversity Analysis
+**เป้าหมาย**: วิเคราะห์ระบบหลายเสาอากาศและ diversity techniques
+
+**โจทย์**:
+1. Implement dual-antenna RSSI comparison และ selection diversity
+2. สร้าง spatial correlation analysis ระหว่างเสาอากาศ
+3. วิเคราะห์ multipath fading effects และ Doppler shift
+4. สร้าง adaptive antenna switching algorithm
+
+**Hints**:
+- Maximal ratio combining สำหรับ diversity
+- Cross-correlation function สำหรับ spatial analysis
+- Doppler shift จาก phase drift analysis
+- Switch antenna based on SNR และ BER thresholds
+
 ## การแก้ไขปัญหา
 
 ### ปัญหา 1: การวิเคราะห์ช้าเกินไป
