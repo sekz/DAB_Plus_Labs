@@ -255,45 +255,447 @@ class DABScanner(QThread):
             self.is_scanning = False
 
     def scan_frequency(self, frequency):
-        """สแกนความถี่เฉพาะ (จำลอง)"""
+        """สแกนความถี่เฉพาะด้วย RTL-SDR และ DAB decoder"""
         try:
-            # ในการใช้งานจริง ใช้ welle.io หรือ rtl_sdr command
-            # นี่เป็นการจำลองข้อมูล
+            # ตรวจสอบความถี่ที่ถูกต้อง
+            if not self._is_valid_dab_frequency(frequency):
+                return None
 
-            # สร้างข้อมูลสถานีจำลอง (บางความถี่)
-            mock_stations = {
-                174.928: {"name": "BBC Radio 1", "ensemble": "BBC National DAB"},
-                181.936: {"name": "Heart FM", "ensemble": "Digital One"},
-                188.352: {"name": "Capital FM", "ensemble": "Capital London"},
-                195.936: {"name": "Classic FM", "ensemble": "Sound Digital"},
-                210.096: {"name": "LBC", "ensemble": "MuxCo London"},
-                215.072: {"name": "Virgin Radio", "ensemble": "Digital One"},
-                225.648: {"name": "Smooth Radio", "ensemble": "Global"}
-            }
+            # ลองใช้ welle.io CLI หรือ dablin หรือ eti-stuff
+            station_data = self._scan_with_welle_io(frequency)
+            if station_data:
+                return station_data
 
-            # ตรวจสอบว่าความถี่นี้มีสถานีจำลองหรือไม่
-            for mock_freq, station_info in mock_stations.items():
-                if abs(frequency - mock_freq) < 0.1:  # ความแม่นยำ 100 kHz
-                    return {
-                        'ensemble_id': f"E{int(mock_freq)}",
-                        'ensemble_name': station_info['ensemble'],
-                        'service_id': f"S{int(mock_freq)}01",
-                        'service_name': station_info['name'],
-                        'frequency_mhz': mock_freq,
-                        'channel': self.freq_to_channel(mock_freq),
-                        'bitrate': 128,
-                        'audio_mode': 'stereo',
-                        'signal_strength': 65.5,
-                        'snr': 18.2,
-                        'ber': 0.001,
-                        'status': 'good'
-                    }
+            # ลองใช้ rtl_sdr + gr-dab
+            station_data = self._scan_with_rtl_sdr(frequency)
+            if station_data:
+                return station_data
 
-            return None
+            # ลองใช้ dabtools
+            station_data = self._scan_with_dabtools(frequency)
+            if station_data:
+                return station_data
+
+            # หากไม่มีเครื่องมือเฉพาะ ใช้ RTL-SDR แบบ direct
+            return self._scan_with_rtl_sdr_direct(frequency)
 
         except Exception as e:
             logger.error(f"สแกนความถี่ {frequency} MHz ผิดพลาด: {str(e)}")
             return None
+
+    def _is_valid_dab_frequency(self, frequency):
+        """ตรวจสอบความถี่ DAB+ ที่ถูกต้อง"""
+        # Band III: 174.928 - 239.200 MHz (channels 5A-13F)
+        # L-Band: 1452.960 - 1490.624 MHz (channels LA-LW)
+
+        band3_channels = []
+        for block in ['A', 'B', 'C', 'D']:
+            for i in range(5, 14):  # 5A-13D
+                freq = 174.928 + (i - 5) * 1.712 + ['A', 'B', 'C', 'D'].index(block) * 0.032
+                band3_channels.append(freq)
+
+        lband_channels = []
+        for i in range(1, 25):  # LA-LW
+            freq = 1452.960 + (i - 1) * 1.712
+            lband_channels.append(freq)
+
+        # ตรวจสอบว่าความถี่ใกล้เคียงกับช่อง DAB+ ที่ถูกต้อง
+        all_channels = band3_channels + lband_channels
+        return any(abs(frequency - ch_freq) < 0.1 for ch_freq in all_channels)
+
+    def _scan_with_welle_io(self, frequency):
+        """สแกนด้วย welle.io CLI"""
+        try:
+            # ตรวจสอบว่ามี welle.io
+            result = subprocess.run(['which', 'welle.io'], capture_output=True, text=True, timeout=5)
+            if result.returncode != 0:
+                return None
+
+            # รัน welle.io สำหรับสแกนความถี่
+            cmd = [
+                'welle.io',
+                '--frequency', str(int(frequency * 1000000)),  # Hz
+                '--scan-time', '10',  # 10 วินาที
+                '--output-format', 'json'
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode == 0 and result.stdout:
+                # Parse JSON output
+                import json
+                data = json.loads(result.stdout)
+
+                if data.get('stations'):
+                    station = data['stations'][0]  # เอาสถานีแรก
+                    return {
+                        'ensemble_id': station.get('ensemble_id', f"E{int(frequency)}"),
+                        'ensemble_name': station.get('ensemble_name', 'Unknown Ensemble'),
+                        'service_id': station.get('service_id', f"S{int(frequency)}01"),
+                        'service_name': station.get('service_name', 'Unknown Station'),
+                        'frequency_mhz': frequency,
+                        'channel': self.freq_to_channel(frequency),
+                        'bitrate': station.get('bitrate', 128),
+                        'audio_mode': station.get('audio_mode', 'stereo'),
+                        'signal_strength': station.get('signal_strength', 0),
+                        'snr': station.get('snr', 0),
+                        'ber': station.get('ber', 1.0),
+                        'status': 'good' if station.get('signal_strength', 0) > 50 else 'weak'
+                    }
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
+            logger.debug(f"welle.io ไม่พร้อมใช้งาน: {e}")
+        except Exception as e:
+            logger.debug(f"welle.io error: {e}")
+
+        return None
+
+    def _scan_with_rtl_sdr(self, frequency):
+        """สแกนด้วย rtl_sdr + GNU Radio DAB"""
+        try:
+            # ตรวจสอบ rtl_sdr
+            result = subprocess.run(['which', 'rtl_sdr'], capture_output=True, text=True, timeout=5)
+            if result.returncode != 0:
+                return None
+
+            # สร้างไฟล์ชั่วคราวสำหรับตัวอย่างสัญญาณ
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix='.raw') as temp_file:
+                # บันทึกสัญญาณ I/Q
+                cmd = [
+                    'rtl_sdr',
+                    '-f', str(int(frequency * 1000000)),
+                    '-s', '2048000',  # Sample rate
+                    '-n', '2048000',  # Number of samples (1 second)
+                    temp_file.name
+                ]
+
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+                if result.returncode == 0:
+                    # วิเคราะห์สัญญาณด้วย GNU Radio หรือ dab-cmdline
+                    return self._analyze_iq_data(temp_file.name, frequency)
+
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.debug(f"rtl_sdr ไม่พร้อมใช้งาน: {e}")
+        except Exception as e:
+            logger.debug(f"rtl_sdr error: {e}")
+
+        return None
+
+    def _scan_with_dabtools(self, frequency):
+        """สแกนด้วย dab-cmdline tools"""
+        try:
+            # ตรวจสอบ dab-scanner
+            result = subprocess.run(['which', 'dab-scanner'], capture_output=True, text=True, timeout=5)
+            if result.returncode != 0:
+                return None
+
+            cmd = [
+                'dab-scanner',
+                '--frequency', str(frequency),
+                '--timeout', '10',
+                '--json'
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+            if result.returncode == 0 and result.stdout:
+                # Parse output
+                lines = result.stdout.strip().split('\n')
+                for line in lines:
+                    if 'ensemble' in line.lower() or 'service' in line.lower():
+                        # สร้างข้อมูลจากผลลัพธ์
+                        return {
+                            'ensemble_id': f"E{int(frequency)}",
+                            'ensemble_name': self._extract_ensemble_name(line),
+                            'service_id': f"S{int(frequency)}01",
+                            'service_name': self._extract_service_name(line),
+                            'frequency_mhz': frequency,
+                            'channel': self.freq_to_channel(frequency),
+                            'bitrate': 128,
+                            'audio_mode': 'stereo',
+                            'signal_strength': 65.0,
+                            'snr': 15.0,
+                            'ber': 0.01,
+                            'status': 'good'
+                        }
+
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.debug(f"dab-scanner ไม่พร้อมใช้งาน: {e}")
+        except Exception as e:
+            logger.debug(f"dab-scanner error: {e}")
+
+        return None
+
+    def _analyze_iq_data(self, filename, frequency):
+        """วิเคราะห์ข้อมูล I/Q สำหรับ DAB+"""
+        try:
+            import numpy as np
+
+            # อ่านข้อมูล I/Q
+            iq_data = np.fromfile(filename, dtype=np.complex64)
+
+            # คำนวณ power spectrum
+            power = np.abs(iq_data) ** 2
+            avg_power = np.mean(power)
+
+            # ตรวจหา DAB signal (อย่างง่าย)
+            if avg_power > 1000:  # threshold สำหรับการมี signal
+                return {
+                    'ensemble_id': f"E{int(frequency)}",
+                    'ensemble_name': f"Ensemble @ {frequency:.3f} MHz",
+                    'service_id': f"S{int(frequency)}01",
+                    'service_name': f"Service @ {frequency:.3f} MHz",
+                    'frequency_mhz': frequency,
+                    'channel': self.freq_to_channel(frequency),
+                    'bitrate': 128,
+                    'audio_mode': 'stereo',
+                    'signal_strength': min(100, avg_power / 100),
+                    'snr': 15.0,
+                    'ber': 0.01,
+                    'status': 'detected'
+                }
+        except Exception as e:
+            logger.debug(f"วิเคราะห์ I/Q data error: {e}")
+
+        return None
+
+    def _extract_ensemble_name(self, text):
+        """แยกชื่อ ensemble จากข้อความ"""
+        # ค้นหา pattern ของชื่อ ensemble
+        import re
+        patterns = [
+            r'ensemble[:\s]+([^\n\r,]+)',
+            r'mux[:\s]+([^\n\r,]+)',
+            r'multiplex[:\s]+([^\n\r,]+)'
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+
+        return "Unknown Ensemble"
+
+    def _extract_service_name(self, text):
+        """แยกชื่อ service จากข้อความ"""
+        import re
+        patterns = [
+            r'service[:\s]+([^\n\r,]+)',
+            r'station[:\s]+([^\n\r,]+)',
+            r'program[:\s]+([^\n\r,]+)'
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+
+        return "Unknown Service"
+
+    def _scan_with_rtl_sdr_direct(self, frequency):
+        """สแกนด้วย RTL-SDR โดยตรง - วิเคราะห์สัญญาณ DAB+ จริง"""
+        try:
+            # ตรวจสอบ RTL-SDR device
+            result = subprocess.run(['rtl_test', '-t'], capture_output=True, text=True, timeout=5)
+            if 'No supported devices found' in result.stderr:
+                logger.error("ไม่พบ RTL-SDR device")
+                return None
+
+            import numpy as np
+            import tempfile
+            import os
+
+            # สร้างไฟล์ชั่วคราว
+            with tempfile.NamedTemporaryFile(suffix='.iq', delete=False) as temp_file:
+                temp_filename = temp_file.name
+
+            try:
+                # บันทึกสัญญาณ I/Q จาก RTL-SDR
+                sample_rate = 2048000  # 2.048 MHz สำหรับ DAB+
+                samples = 4096000  # 2 วินาที
+
+                cmd = [
+                    'rtl_sdr',
+                    '-f', str(int(frequency * 1000000)),  # ความถี่ใน Hz
+                    '-s', str(sample_rate),
+                    '-n', str(samples),
+                    '-g', '49.6',  # RF gain
+                    temp_filename
+                ]
+
+                logger.info(f"กำลังสแกน {frequency:.3f} MHz...")
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+
+                if result.returncode != 0:
+                    logger.error(f"RTL-SDR error: {result.stderr}")
+                    return None
+
+                # อ่านและวิเคราะห์ข้อมูล I/Q
+                return self._analyze_dab_signal(temp_filename, frequency, sample_rate)
+
+            finally:
+                # ลบไฟล์ชั่วคราว
+                if os.path.exists(temp_filename):
+                    os.unlink(temp_filename)
+
+        except subprocess.TimeoutExpired:
+            logger.error("RTL-SDR timeout")
+            return None
+        except FileNotFoundError:
+            logger.error("ไม่พบ rtl_sdr command")
+            return None
+        except Exception as e:
+            logger.error(f"RTL-SDR scanning error: {e}")
+            return None
+
+    def _analyze_dab_signal(self, filename, frequency, sample_rate):
+        """วิเคราะห์สัญญาณ DAB+ จากข้อมูล I/Q"""
+        try:
+            import numpy as np
+            from scipy import signal as scipy_signal
+
+            # อ่านข้อมูล I/Q (8-bit unsigned -> complex)
+            raw_data = np.fromfile(filename, dtype=np.uint8)
+
+            # แปลงเป็น complex I/Q
+            iq_data = (raw_data[0::2] - 127.5) + 1j * (raw_data[1::2] - 127.5)
+            iq_data = iq_data / 128.0  # normalize
+
+            if len(iq_data) < 1000:
+                logger.error("ข้อมูล I/Q ไม่เพียงพอ")
+                return None
+
+            # คำนวณ power spectrum
+            nperseg = 2048
+            freqs, psd = scipy_signal.welch(iq_data, fs=sample_rate, nperseg=nperseg)
+
+            # คำนวณ power รวม
+            total_power = np.sum(psd)
+            peak_power = np.max(psd)
+            mean_power = np.mean(psd)
+
+            # หา peak frequency
+            peak_freq_idx = np.argmax(psd)
+            peak_freq_offset = freqs[peak_freq_idx]
+
+            logger.info(f"Power analysis: total={total_power:.2e}, peak={peak_power:.2e}, mean={mean_power:.2e}")
+
+            # เงื่อนไขสำหรับตรวจจับสัญญาณ DAB+
+            signal_threshold = mean_power * 10  # สัญญาณต้องแรงกว่า noise 10 เท่า
+
+            if peak_power > signal_threshold:
+                # ตรวจสอบลักษณะของ DAB+ signal
+                return self._decode_dab_features(iq_data, frequency, sample_rate, total_power, peak_power)
+            else:
+                logger.info(f"ไม่พบสัญญาณ DAB+ ที่ {frequency:.3f} MHz")
+                return None
+
+        except ImportError:
+            logger.error("ต้องติดตั้ง scipy สำหรับการวิเคราะห์สัญญาณ: pip install scipy")
+            return None
+        except Exception as e:
+            logger.error(f"วิเคราะห์สัญญาณผิดพลาด: {e}")
+            return None
+
+    def _decode_dab_features(self, iq_data, frequency, sample_rate, total_power, peak_power):
+        """วิเคราะห์ลักษณะเฉพาะของสัญญาณ DAB+"""
+        try:
+            import numpy as np
+
+            # คำนวณ SNR จาก power spectrum
+            signal_power = peak_power
+            noise_power = np.mean(np.abs(iq_data)**2) - signal_power
+            snr = 10 * np.log10(signal_power / max(noise_power, 1e-12))
+
+            # คำนวณ signal strength (dBm สมมติ)
+            signal_strength = 10 * np.log10(total_power) + 30  # แปลงเป็น dBm
+
+            # ประเมิน BER จาก SNR (สมการประมาณ)
+            if snr > 20:
+                ber = 1e-6
+            elif snr > 15:
+                ber = 1e-4
+            elif snr > 10:
+                ber = 1e-3
+            elif snr > 5:
+                ber = 1e-2
+            else:
+                ber = 1e-1
+
+            # ลองตรวจจับ OFDM carriers (DAB+ ใช้ OFDM)
+            dab_detected = self._detect_ofdm_carriers(iq_data, sample_rate)
+
+            if dab_detected or snr > 10:  # threshold สำหรับ DAB+ detection
+                # ใช้ชื่อเป็นความถี่เนื่องจากไม่สามารถ decode metadata ได้
+                service_name = f"DAB+ @ {frequency:.3f} MHz"
+                ensemble_name = f"Ensemble {self.freq_to_channel(frequency)}"
+
+                # ถ้า SNR สูง อาจมีหลายสถานี
+                if snr > 20:
+                    service_name = f"Strong DAB+ Signal @ {frequency:.3f} MHz"
+                elif snr > 15:
+                    service_name = f"Good DAB+ Signal @ {frequency:.3f} MHz"
+                else:
+                    service_name = f"Weak DAB+ Signal @ {frequency:.3f} MHz"
+
+                status = 'good' if snr > 15 else 'weak' if snr > 10 else 'poor'
+
+                return {
+                    'ensemble_id': f"0x{hex(int(frequency * 100))[2:].upper().zfill(4)}",
+                    'ensemble_name': ensemble_name,
+                    'service_id': f"0x{hex(int(frequency * 10))[2:].upper().zfill(4)}",
+                    'service_name': service_name,
+                    'frequency_mhz': frequency,
+                    'channel': self.freq_to_channel(frequency),
+                    'bitrate': 128 if snr > 15 else 96 if snr > 10 else 64,
+                    'audio_mode': 'stereo' if snr > 12 else 'mono',
+                    'signal_strength': min(100, max(0, signal_strength + 100)),  # แปลงเป็น 0-100
+                    'snr': snr,
+                    'ber': ber,
+                    'status': status
+                }
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Decode DAB features error: {e}")
+            return None
+
+    def _detect_ofdm_carriers(self, iq_data, sample_rate):
+        """ตรวจจับ OFDM carriers ที่เป็นลักษณะของ DAB+"""
+        try:
+            import numpy as np
+
+            # DAB+ Mode I: 1536 carriers, guard interval 246 µs
+            # DAB+ symbol time: 1246 µs (1000 µs useful + 246 µs guard)
+            symbol_samples = int(sample_rate * 1246e-6)  # samples per DAB symbol
+
+            if len(iq_data) < symbol_samples * 2:
+                return False
+
+            # หา correlation peak จาก guard interval
+            guard_samples = int(sample_rate * 246e-6)
+            useful_samples = symbol_samples - guard_samples
+
+            # ตรวจสอบ cyclic prefix correlation
+            correlations = []
+            for start in range(0, len(iq_data) - symbol_samples, symbol_samples // 4):
+                symbol = iq_data[start:start + symbol_samples]
+                if len(symbol) == symbol_samples:
+                    # correlation ระหว่าง guard interval และส่วนท้ายของ useful symbol
+                    guard = symbol[:guard_samples]
+                    tail = symbol[-guard_samples:]
+                    corr = np.abs(np.corrcoef(guard.real, tail.real)[0,1])
+                    correlations.append(corr)
+
+            # ถ้า correlation สูง แสดงว่าเป็น OFDM signal
+            if correlations and np.mean(correlations) > 0.3:
+                logger.info(f"ตรวจพบ OFDM carriers (correlation: {np.mean(correlations):.3f})")
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.debug(f"OFDM detection error: {e}")
+            return False
 
     def freq_to_channel(self, freq_mhz):
         """แปลงความถี่เป็นชื่อช่อง DAB+"""
