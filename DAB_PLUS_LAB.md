@@ -20,25 +20,29 @@
 - สแกนหาสถานี DAB+ และเล่นเสียง
 - จัดการข้อมูลเมทาดาต้าและสไลด์โชว์
 
-### Lab 3: การควบคุม RTL-SDR โดยตรงด้วย pyrtlsdr
-- เข้าถึงและควบคุม RTL-SDR โดยตรงผ่าน Python
-- การอ่านและวิเคราะห์สัญญาณความถี่
-- สร้างกราฟแสดงผลสเปกตรัม
+### Lab 3: Learning DAB+ with RTL-SDR (Progressive Development) ✅ COMPLETED
+- **Progressive Development**: เรียนรู้ DAB+ แบบ step-by-step ใน 5 phases
+- **Phase 1a**: lab3_1a.py - RTL-SDR I/Q data acquisition (pyrtlsdr)
+- **Phase 1b**: lab3_1b.py - Network RTL-SDR client (rtl_tcp)
+- **Phase 2**: lab3_2.py - ETI stream processing (eti-cmdline)
+- **Phase 3**: lab3_3.py - ETI parser และ service extraction
+- **Phase 4**: lab3_4.py - Audio playback และ slideshow
+- **Phase 5**: lab3_5.py - Complete PyQt5 GUI application
 
-### Lab 4: สร้าง DAB+ Station Scanner
-- พัฒนาแอปพลิเคชันสแกนและติดตามสถานี DAB+
-- ติดตามคุณภาพสัญญาณแบบเรียลไทม์
-- สร้าง GUI ด้วย PyQt5 สำหรับหน้าจอสัมผัส
+### Lab 4: สร้าง DAB+ Station Scanner (การบ้าน - 3-4 ชั่วโมง)
+- สร้างแอปพลิเคชันสแกนสถานี DAB+ อย่างง่าย
+- ใช้ Lab 3 pipeline สำหรับหาสถานี
+- เก็บข้อมูลสถานีในฐานข้อมูล SQLite พื้นฐาน
 
-### Lab 5: สร้าง DAB+ Program Recorder
-- พัฒนาระบบบันทึกรายการ DAB+ ตามตารางเวลา
-- จัดการการบันทึกแบบแมนนวลและอัตโนมัติ
-- จัดเก็บไฟล์เสียง สไลด์ และเมทาดาต้า
+### Lab 5: สร้าง DAB+ Program Recorder (การบ้าน - 3-4 ชั่วโมง)
+- สร้างระบบบันทึกรายการ DAB+ อย่างง่าย
+- ใช้ Lab 3 pipeline สำหรับบันทึกเสียง
+- จัดการตารางเวลาการบันทึกพื้นฐาน
 
-### Lab 6: สร้าง DAB+ Signal Analyzer
-- พัฒนาเครื่องมือวิเคราะห์สัญญาณ DAB+ อย่างละเอียด
-- วิเคราะห์คุณภาพสัญญาณ และสเปกตรัมความถี่
-- สร้างกราฟและรายงานการวิเคราะห์
+### Lab 6: สร้าง DAB+ Signal Analyzer (การบ้าน - 3-4 ชั่วโมง)
+- สร้างเครื่องมือวิเคราะห์สัญญาณ DAB+ อย่างง่าย
+- ใช้ Lab 3 pipeline สำหรับวิเคราะห์สัญญาณ
+- แสดงค่า SNR, RSSI, BER แบบ real-time
 
 ## 🔧 ข้อกำหนดระบบ
 
@@ -423,36 +427,100 @@ class DABReceiver:
 
 ---
 
-## 🔬 LAB 3: การควบคุม RTL-SDR โดยตรงด้วย pyrtlsdr
+## 🔬 LAB 3: Learning DAB+ with RTL-SDR (Progressive Development) ✅ COMPLETED
 
 ### วัตถุประสงค์
-- เข้าถึงและควบคุม RTL-SDR โดยตรงผ่าน Python
-- การอ่านและวิเคราะห์สัญญาณความถี่
-- สร้างกราฟแสดงผลสเปกตรัม
+- **เรียนรู้ Progressive Development**: สร้างระบบ DAB+ receiver แบบ step-by-step
+- **เข้าใจ DAB+ Protocol**: ETI stream, FIC/FIG decoding, service multiplexing
+- **สร้าง Complete GUI**: PyQt5 application สำหรับ 7" touchscreen
+- **Audio Processing Chain**: I/Q → ETI → AAC → PyAudio
 
-### Signal Processing พื้นฐาน
+### ✅ Phase 1a: RTL-SDR I/Q Data Acquisition (lab3_1a.py)
 ```python
+# ✅ COMPLETED - RTL-SDR direct access
 from rtlsdr import RtlSdr
 import numpy as np
-import matplotlib.pyplot as plt
 
-sdr = RtlSdr()
-sdr.sample_rate = 2.4e6
-sdr.center_freq = 100e6
+class RTLSDRDataAcquisition:
+    def __init__(self):
+        self.frequency = 185360000  # DAB+ Thailand
+        self.sample_rate = 2048000  # 2.048 MHz
 
-# อ่าน IQ samples
-samples = sdr.read_samples(1024*1024)
+    def capture_samples(self, duration_seconds=10):
+        # Real-time I/Q capture และ spectrum analysis
+        # Export: raw_iq_data.bin, spectrum_analysis.png
+```
 
-# คำนวณ FFT
-fft_data = np.fft.fft(samples)
-power = 20 * np.log10(np.abs(fft_data))
+### ✅ Phase 1b: Network RTL-SDR Client (lab3_1b.py)
+```python
+# ✅ COMPLETED - rtl_tcp client implementation
+class RTLTCPClient:
+    def connect_to_server(self):
+        # TCP client สำหรับ remote RTL-SDR access
+        # Export: networked_iq_data.bin
+```
 
-# สร้างกราฟ spectrum
-frequencies = np.fft.fftfreq(len(samples), 1/sdr.sample_rate)
-plt.plot(frequencies/1e6, power)
-plt.xlabel('Frequency (MHz)')
-plt.ylabel('Power (dB)')
-plt.show()
+### ✅ Phase 2: ETI Stream Processing (lab3_2.py)
+```python
+# ✅ COMPLETED - eti-cmdline integration
+# I/Q data → ETI stream (6144-byte frames)
+# Sync monitoring และ error rate tracking
+# Export: dab_ensemble.eti
+```
+
+### ✅ Phase 3: ETI Parser และ Service Extraction (lab3_3.py)
+```python
+# ✅ COMPLETED - Complete ETI analyzer
+class ETIFrameParser:
+    def parse_eti_frame(self, frame_data):
+        # Parse 6144-byte ETI-NI frames
+        # FIC/FIG decoding สำหรับ service information
+        # Export: service_list.json, subchannel_info.json
+```
+
+### ✅ Phase 4: Audio Playback และ Slideshow (lab3_4.py)
+```python
+# ✅ COMPLETED - Complete audio processing
+class DABServicePlayer:
+    def play_service(self, service_id):
+        # ETI → AAC decode → PyAudio playback
+        # Dynamic Label Segment (DLS) extraction
+        # MOT slideshow image handling
+        # Export: decoded_audio.wav, slideshow_images/
+```
+
+### ✅ Phase 5: Complete GUI Application (lab3_5.py)
+```python
+# ✅ COMPLETED - Professional PyQt5 GUI
+class DABPlusGUI(QMainWindow):
+    def __init__(self):
+        # 📱 Touch-optimized for 7" HDMI touchscreen
+        # 📊 Real-time spectrum analyzer (pyqtgraph)
+        # 🎵 Audio controls พร้อม QMediaPlayer
+        # 🖼️ Slideshow viewer พร้อม auto-advance
+        # ⚙️ RTL-SDR settings panel
+        # 🌑 Dark theme optimized
+```
+
+### 🎯 Lab 3 Features Summary:
+- **5 Complete Phases** - Progressive learning approach
+- **Full Audio Chain** - I/Q capture → ETI → Service decode → Audio playback
+- **Professional GUI** - Touch-friendly PyQt5 interface
+- **Real-time Analysis** - Spectrum analyzer, signal quality monitoring
+- **Complete Integration** - ทุก phase ทำงานร่วมกันได้
+- **Thailand DAB+ Ready** - 185.360 MHz, 202.928 MHz support
+
+### 📁 Output Files ที่ได้:
+```
+Lab3_Outputs/
+├── raw_iq_data.bin              # Phase 1a: I/Q samples
+├── networked_iq_data.bin        # Phase 1b: Network I/Q
+├── dab_ensemble.eti             # Phase 2: ETI stream
+├── service_list.json            # Phase 3: Services
+├── subchannel_info.json         # Phase 3: Subchannels
+├── extracted_audio/             # Phase 4: Audio files
+├── slideshow_images/            # Phase 4: MOT images
+└── spectrum_analysis.png        # Phase 1-5: Visualizations
 ```
 
 ---
@@ -559,7 +627,17 @@ DAB_Recordings/
 6. **สร้างแอปพลิเคชัน** scanner, recorder, และ analyzer
 7. **จัดการฐานข้อมูล** SQLite และการ export ข้อมูล
 
-### 📊 เวลาเรียนรวม: ~10 ชั่วโมง (600 นาที)
+### 📊 เวลาเรียนรวม: ~14-15 ชั่วโมง + 9-12 ชั่วโมงการบ้าน
+
+#### หลักสูตรหลัก (Labs 1-3): 14-15 ชั่วโมง
+- **Lab 1**: การติดตั้งและทดสอบ RTL-SDR (2-3 ชั่วโมง)
+- **Lab 2**: การใช้งาน welle.io ผ่าน Python (3-4 ชั่วโมง)
+- **Lab 3**: Learning DAB+ with RTL-SDR (5 phases, 9-8 ชั่วโมง)
+
+#### การบ้าน (Labs 4-6): 9-12 ชั่วโมง
+- **Lab 4**: DAB+ Station Scanner (3-4 ชั่วโมง)
+- **Lab 5**: DAB+ Program Recorder (3-4 ชั่วโมง)
+- **Lab 6**: DAB+ Signal Analyzer (3-4 ชั่วโมง)
 
 **เป้าหมาย**: สร้างนักพัฒนา DAB+ ที่มีความรู้ครบถ้วนทั้งด้าน Hardware, Software และ GUI Development
 

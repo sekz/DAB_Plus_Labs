@@ -10,9 +10,12 @@ footer: 'Digital Audio Broadcasting Plus Learning Project'
 ---
 
 <style>
+
 section {
-  font-size: 2em;
+  font-size: 1.85em;
+  padding: 2em;
 }
+section table { font-size: 16px; }
 h1 {
   font-size: 1.25em;
 }
@@ -30,6 +33,18 @@ li, p, td {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
 }
+code {
+    font-size: 10px;
+}
+pre {
+    font-size: 14px;
+    line-height: 1.25;
+    padding: 12px;
+  }
+  pre code {
+    font-size: inherit;
+        font-family: 'Fira Code', monospace;
+  }
 .code-small {
   font-size: 0.5em;
 }
@@ -40,7 +55,6 @@ li, p, td {
 ## คู่มือการเรียนรู้ Digital Audio Broadcasting Plus
 ### พร้อม RTL-SDR และ PyQt5
 
----
 เวอร์ชัน 1.1 | กันยายน 2025
 
 ---
@@ -112,6 +126,10 @@ li, p, td {
 
 **รวมเวลา**: ~1.25 ชั่วโมง (75 นาที) | **🎯 เป้าหมาย**: เรียนรู้การใช้งาน DAB+ tools
 
+---
+
+# 📚 ภาพรวมแล็บทั้งหมด (ต่อ)
+
 ## 🚀 Lab Series ขั้นสูง (ใหม่ - เน้น development + trap exercises)
 | Lab | หัวข้อ | เวลา | ระดับ |
 |-----|--------|------|--------|
@@ -149,13 +167,13 @@ li, p, td {
 </div>
 <div>
 
-## 🇹🇭 DAB+ ในประเทศไทย (2025)
-**ความถี่ตาม NBTC:**
-- **Channel 5C**: 178.352 MHz (Bangkok, Pattaya, Hua Hin)
-- **Channel 6C**: 185.360 MHz (National Network)
-- **Channel 7C**: 192.352 MHz (เชียงใหม่, ภาคใต้)
-- **Channel 8C**: 199.360 MHz (Bangkok, Pattaya, Hua Hin)
+## 🇹🇭 DAB+ ในประเทศไทย (Sep 2025)
+**สถานีทดสองออกอากาศ:**
+- **Block 9A**: 202.928 MHz Dharma Radio Station (Bangkok)
+- **Block 6C**: 185.360 MHz Khon Kaen Station (Khon Kaen, Maha Sarakham)
 
+
+see: https://www.worlddab.org/countries/thailand
 </div>
 </div>
 
@@ -431,7 +449,7 @@ class SignalMonitor(QWidget):
 
 # 🔌 LAB 1: การตั้งค่าเบื้องต้น RTL-SDR (20 นาที)
 
-<div class="columns">
+
 <div>
 
 ## 🛠️ การติดตั้ง RTL-SDR Drivers
@@ -456,6 +474,10 @@ echo 'blacklist dvb_usb_rtl28xxu' | sudo tee --append /etc/modprobe.d/blacklist-
 ```
 
 </div>
+
+---
+
+<div class="columns">
 <div>
 
 ## ✅ การทดสอบ
@@ -474,6 +496,8 @@ rtl_test -t
 
 </div>
 </div>
+
+---
 
 ## 🎯 Trap Exercises LAB 1:
 
@@ -535,53 +559,431 @@ sudo apt install welle.io
 
 ---
 
-# 🔬 LAB 3: Command Line Tools สำหรับ DAB+ (15 นาที)
+# 🔬 LAB 3: Learning DAB+ with Raspberry Pi (Progressive Development)
+## 🕒 เวลารวม: 8-10 ชั่วโมง (แบ่งเป็น 5 phases)
+
+### 📋 ภาพรวม Lab 3: การพัฒนา DAB+ แบบ Step-by-Step
+**เป็นแล็บหลักที่สอนการสร้าง DAB+ receiver ตั้งแต่ต้นจนจบ**
+
+---
+
+# 📡 Lab 3 ภาพรวมของ LAB
+
+![alt text](img/Lab3_DAB_Plus_Flow_Diagram.svg)
+
+---
+
+# 📡 Lab 3 รายละเอียด Technical Architecture
+
+![alt text](img/Lab3_Technical_Architecture.svg)
+
+---
+
+# 📡 Lab 3 Phase 1: RTL-SDR Data Acquisition
 
 <div class="columns">
 <div>
 
-## 🛠️ RTL-SDR Command Line Tools
+### **Phase 1a: pyrtlsdr I/Q Capture**
+**เรียนรู้**: การใช้ pyrtlsdr library ควบคุม RTL-SDR เพื่อรับสัญญาณ I/Q จากความถี่ DAB+ ในประเทศไทย
+```python
+# lab3_1a.py - RTL-SDR พื้นฐาน
+import numpy as np
+from rtlsdr import RtlSdr
 
-### **1. rtl_test - ทดสอบ hardware**
-```bash
-# ทดสอบ RTL-SDR dongle
-rtl_test -t
+class DABSignalCapture:
+    def __init__(self):
+        self.sdr = RtlSdr()
+        self.dab_freq = 185.360e6  # Thailand
+        self.sample_rate = 2.048e6
 
-# ทดสอบ sample rate
-rtl_test -s 2048000
+    def setup_sdr(self):
+        # TODO: ตั้งค่า RTL-SDR parameters
+        # TODO: center frequency, sample rate, gain
+        pass
+
+    def capture_iq_data(self, duration=5):
+        # TODO: รับ I/Q samples
+        # TODO: คำนวณ spectrum
+        # TODO: บันทึก raw data
+        pass
 ```
-- [ ] ตรวจสอบ PPM error
-- [ ] ดู dropped samples
-
-### **2. rtl_power - Spectrum Analysis**
-```bash
-# Scan ย่านความถี่ DAB+ (5 นาที)
-rtl_power -f 174M:230M:8k -g 30 -i 10 dab_spectrum.csv
-
-# ดูผลลัพธ์
-cat dab_spectrum.csv | head -20
-```
+**ผลลัพธ์**: สามารถรับและวิเคราะห์ spectrum ของสัญญาณ DAB+ ได้
 
 </div>
 <div>
 
-### **3. rtl_fm - FM Demodulation**
-```bash
-# ฟัง FM radio ปกติ
-rtl_fm -M fm -f 101.5M -s 200000 -r 48000 | aplay -r 48000 -f S16_LE
-```
+### **Phase 1b: rtl_tcp Network Client**
+**เรียนรู้**: การสร้าง TCP client เชื่อมต่อ rtl_tcp server เพื่อรับ I/Q data แบบ network streaming
+```python
+# lab3_1b.py - Network รับ I/Q ผ่าน TCP
+import socket
+import struct
+import numpy as np
 
-### **4. DAB+ Signal Information**
-```bash
-# ใช้ rtl_sdr capture raw data
-rtl_sdr -f 185360000 -s 2048000 -n 2048000 dab_signal.raw
+class RTLTCPClient:
+    def __init__(self, host='localhost', port=1234):
+        self.host = host
+        self.port = port
+        self.socket = None
 
-# ดูข้อมูล file
-ls -lh dab_signal.raw
+    def connect_to_server(self):
+        # TODO: เชื่อมต่อ rtl_tcp server
+        # TODO: ส่งคำสั่งตั้งค่า frequency
+        pass
+
+    def receive_iq_stream(self):
+        # TODO: รับ I/Q data แบบ streaming
+        # TODO: แปลง bytes เป็น complex samples
+        pass
 ```
+**ผลลัพธ์**: สามารถรับ I/Q data ผ่าน network และเปรียบเทียบกับ USB direct connection
 
 </div>
 </div>
+
+**🎯 ผลลัพธ์ Phase 1**: I/Q data capture, spectrum analysis, network streaming
+
+---
+
+# 🔄 Lab 3 Phase 2: ETI Stream Processing
+
+<div class="columns">
+<div>
+
+### **ETI-cmdline Integration**
+**เรียนรู้**: การใช้ eti-cmdline แปลงสัญญาณ I/Q จาก RTL-SDR เป็น ETI frames ขนาด 6144 bytes ต่อ frame
+```python
+# lab3_2.py - DAB+ Signal → ETI Conversion
+import subprocess
+import threading
+from queue import Queue
+
+class ETIProcessor:
+    def __init__(self):
+        self.eti_cmdline_path = "/usr/local/bin/eti-cmdline"
+        self.eti_queue = Queue()
+        self.sync_status = False
+
+    def start_eti_processing(self):
+        # TODO: เริ่ม eti-cmdline subprocess
+        # TODO: ส่ง I/Q data เข้า stdin
+        # TODO: รับ ETI frames จาก stdout
+        pass
+
+    def parse_eti_frame(self, eti_data):
+        # TODO: แยก ETI frame (6144 bytes)
+        # TODO: ตรวจสอบ sync pattern
+        # TODO: คำนวณ error rate
+        pass
+```
+**ผลลัพธ์**: ได้ ETI stream ที่สามารถแยกเป็น FIC และ MSC data
+
+</div>
+<div>
+
+### **Signal Quality Monitoring**
+**เรียนรู้**: การติดตาม sync status และ error rate เพื่อประเมินคุณภาพสัญญาณ DAB+ แบบ real-time
+```python
+class SignalQualityMonitor:
+    def __init__(self):
+        self.sync_rate = 0.0
+        self.error_count = 0
+        self.frame_count = 0
+
+    def update_quality_metrics(self, frame):
+        # TODO: คำนวณ sync success rate
+        # TODO: ติดตาม error statistics
+        # TODO: แสดงผล real-time status
+        pass
+
+    def display_status(self):
+        # TODO: แสดง sync status ทุก 1 วินาที
+        # TODO: แสดง error rate percentage
+        # TODO: แสดง signal strength
+        pass
+```
+**ผลลัพธ์**: มี metrics แสดงคุณภาพสัญญาณและความเสถียรของการรับสัญญาณ
+
+</div>
+</div>
+
+**🎯 ผลลัพธ์ Phase 2**: ETI stream generation, sync monitoring, error tracking
+
+---
+
+# 🔍 Lab 3 Phase 3: ETI Analysis & Service Discovery
+
+<div class="columns">
+<div>
+
+### **FIC (Fast Information Channel) Parser**
+**เรียนรู้**: การถอดรหัส FIC data จาก ETI เพื่อดึงข้อมูล ensemble, services และ subchannels ผ่าน FIG decoding
+```python
+# lab3_3.py - ETI Frame Analysis
+class FICParser:
+    def __init__(self):
+        self.ensemble_info = {}
+        self.services = {}
+        self.subchannels = {}
+
+    def parse_fic_data(self, fic_bytes):
+        # TODO: แยก FIG (Fast Information Group)
+        # TODO: ดึง ensemble information
+        # TODO: แยก service list
+        pass
+
+    def decode_fig_types(self, fig_data):
+        # TODO: FIG 0/0 - Basic ensemble info
+        # TODO: FIG 0/1 - Basic subchannel info
+        # TODO: FIG 0/2 - Basic service info
+        # TODO: FIG 1/0 - Service labels
+        pass
+```
+**ผลลัพธ์**: สามารถแยกข้อมูล ensemble และ service list จาก DAB+ multiplex
+
+</div>
+<div>
+
+### **Service Information Extraction**
+**เรียนรู้**: การจัดระเบียบข้อมูล services และ export เป็น JSON สำหรับใช้งานใน phases ต่อไป
+```python
+class ServiceExtractor:
+    def extract_services(self, fic_data):
+        # TODO: สร้าง service database
+        # TODO: จับคู่ service กับ subchannel
+        # TODO: ดึง audio parameters
+        pass
+
+    def export_service_list(self):
+        # TODO: บันทึกเป็น JSON format
+        # TODO: ใส่ข้อมูล service labels
+        # TODO: ระบุ audio bit rates
+        return {
+            "ensemble": "Thailand DAB+",
+            "services": [
+                {
+                    "name": "Service 1",
+                    "id": "0x1001",
+                    "bitrate": 128,
+                    "subchannel": 1
+                }
+            ]
+        }
+```
+**ผลลัพธ์**: ไฟล์ service_list.json และ subchannel_info.json สำหรับ audio decoding
+
+</div>
+</div>
+
+**🎯 ผลลัพธ์ Phase 3**: service_list.json, subchannel_info.json, ensemble metadata
+
+---
+
+# 🎵 Lab 3 Phase 4: Audio Processing & Playback
+
+
+<div class="columns">
+<div>
+
+### **AAC Audio Decoder**
+**เรียนรู้**: การแยก AAC audio frames จาก MSC data และ decode ด้วย ffmpeg + PyAudio สำหรับเล่นเสียงผ่าน 3.5mm jack
+```python
+# lab3_4.py - DAB+ Audio Processing
+import subprocess
+import pyaudio
+from queue import Queue
+import threading
+
+class DABAudioDecoder:
+    def __init__(self):
+        self.audio_queue = Queue()
+        self.pyaudio_instance = pyaudio.PyAudio()
+        self.stream = None
+        self.current_service = None
+
+    def extract_audio_frames(self, msc_data):
+        # TODO: แยก audio super frames
+        # TODO: ส่งข้อมูลไป ffmpeg decode
+        # TODO: ได้ raw PCM audio
+        pass
+
+    def setup_audio_output(self):
+        # TODO: ตั้งค่า PyAudio stream
+        # TODO: รองรับ 3.5mm jack output
+        # TODO: ควบคุม volume level
+        pass
+```
+**ผลลัพธ์**: เล่นเสียง DAB+ ได้ผ่านหูฟัง พร้อมควบคุม volume
+
+</div>
+<div>
+
+### **Dynamic Label & Slideshow**
+**เรียนรู้**: การถอดรหัส DLS (song/artist info) และ MOT slideshow จาก PAD data เพื่อแสดงข้อมูลเพลงและรูปภาพ
+```python
+class DABMetadataProcessor:
+    def __init__(self):
+        self.current_dls = ""
+        self.slideshow_images = []
+
+    def process_dls_data(self, dls_bytes):
+        # TODO: แยก Dynamic Label Segment
+        # TODO: รวม segments เป็น text
+        # TODO: แสดง song title, artist
+        pass
+
+    def process_mot_slideshow(self, mot_data):
+        # TODO: แยก MOT (Multimedia Object Transfer)
+        # TODO: ประกอบ JPEG/PNG images
+        # TODO: บันทึกรูปภาพ slideshow
+        pass
+
+    def display_now_playing(self):
+        # TODO: แสดง current track info
+        # TODO: แสดง slideshow image
+        pass
+```
+**ผลลัพธ์**: แสดงชื่อเพลง, ศิลปิน และ slideshow images แบบ real-time
+
+</div>
+</div>
+
+**🎯 ผลลัพธ์ Phase 4**: Working audio player, DLS text, slideshow images
+
+---
+
+# 🖥️ Lab 3 Phase 5: Complete GUI Application
+
+
+<div class="columns">
+<div>
+
+### **Touch-Optimized GUI**
+**เรียนรู้**: การสร้าง PyQt5 GUI สำหรับหน้าจอสัมผัส 7" พร้อม spectrum analyzer และ dark theme
+```python
+# lab3_5.py - PyQt5 Complete Application
+from PyQt5.QtWidgets import *
+from PyQt5.QtCore import *
+import pyqtgraph as pg
+
+class DABPlusGUI(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setFixedSize(800, 480)  # 7" screen
+        self.setup_dark_theme()
+        self.setup_main_interface()
+
+    def setup_main_interface(self):
+        # TODO: สร้าง tabbed interface
+        # TODO: Spectrum tab, Services tab, Player tab
+        # TODO: Settings tab สำหรับ RTL-SDR
+        pass
+
+    def setup_spectrum_analyzer(self):
+        # TODO: Real-time spectrum plot
+        # TODO: Waterfall display
+        # TODO: Signal quality indicators
+        pass
+```
+**ผลลัพธ์**: GUI application ที่ใช้งานง่ายบนหน้าจอสัมผัส
+
+</div>
+<div>
+
+### **Integrated DAB+ Player**
+**เรียนรู้**: การรวม Phase 1-4 เข้าด้วยกันเป็น complete pipeline จาก I/Q → Audio พร้อม GUI controls
+```python
+class DABPlayerController:
+    def __init__(self, parent):
+        self.parent = parent
+        self.current_phase = 1
+        self.all_components = {}
+
+    def integrate_all_phases(self):
+        # TODO: รวม Phase 1-4 เข้าด้วยกัน
+        # TODO: I/Q → ETI → Services → Audio
+        # TODO: Real-time processing pipeline
+        pass
+
+    def create_player_ui(self):
+        # TODO: Service selection list
+        # TODO: Audio controls (play/stop/volume)
+        # TODO: DLS text display
+        # TODO: Slideshow viewer
+        # TODO: Signal quality meters
+        pass
+```
+**ผลลัพธ์**: DAB+ receiver application ที่ทำงานครบวงจรตั้งแต่ RF จนถึงเสียง
+
+</div>
+</div>
+
+**🎯 ผลลัพธ์ Phase 5**: Complete DAB+ receiver GUI application
+
+---
+
+# 🎯 Lab 3 Trap Exercises (แต่ละ Phase)
+
+<div class="columns">
+<div>
+
+## **Phase 1 Traps:**
+### **Trap 1.1: I/Q Data Analysis**
+วิเคราะห์ spectrum ที่ได้และระบุ DAB+ signal peaks
+
+### **Trap 1.2: Network Protocol**
+อธิบายความแตกต่างระหว่าง USB และ TCP streaming
+
+### **Trap 1.3: Sample Rate Optimization**
+ทดลองเปลี่ยน sample rate และประเมินผลกระทบ
+
+</div>
+<div>
+
+## **Phase 2-3 Traps:**
+### **Trap 2.1: ETI Frame Structure**
+วิเคราะห์ ETI frame header และอธิบาย fields
+
+### **Trap 3.1: FIG Decoding**
+ถอดรหัส FIG manually และเปรียบเทียบกับ parser
+
+### **Trap 3.2: Service Discovery**
+อธิบายขั้นตอนการค้นหา services ใน ensemble
+
+</div>
+</div>
+
+<div class="columns">
+<div>
+
+## **Phase 4-5 Traps:**
+### **Trap 4.1: Audio Pipeline**
+วิเคราะห์ audio processing chain และ latency
+
+### **Trap 4.2: Metadata Parsing**
+ถอดรหัส DLS และ MOT data manually
+
+### **Trap 5.1: GUI Performance**
+วัด CPU/Memory usage และเพิ่มประสิทธิภาพ
+
+</div>
+<div>
+
+## **Integration Traps:**
+### **Trap 5.2: End-to-End Testing**
+ทดสอบ complete pipeline จาก RF → Audio
+
+### **Trap 5.3: Error Recovery**
+จำลองสถานการณ์ signal loss และการกู้คืน
+
+### **Trap 5.4: Multi-Service Support**
+ปรับปรุงให้รองรับหลาย services พร้อมกัน
+
+</div>
+</div>
+
+---
 
 ## 🎯 Trap Exercises LAB 3:
 
@@ -620,13 +1022,19 @@ cmake ..
 make
 ```
 
+</div>
+
+<div>
+
 ### **3. การใช้งาน ETISnoop**
 ```bash
-# รัน ETISnoop กับ RTL-SDR
+## รัน ETISnoop กับ RTL-SDR
 ./eti-snoop -D RTL_SDR -C 6C
 ```
 
-</div>
+---
+
+<div class="columns">
 <div>
 
 ## 🔍 สิ่งที่ตรวจสอบใน ETISnoop
@@ -643,14 +1051,19 @@ make
 - [ ] Program Types
 - [ ] Bit Rates
 
+</div>
+<div>
+
 ### **3. Technical Parameters**
 - [ ] Frame Error Rate
 - [ ] Signal Quality
 - [ ] Frequency Offset
 - [ ] Time/Date Information
+</div>
 
 </div>
-</div>
+
+---
 
 ## 🎯 Trap Exercises LAB 4:
 
@@ -677,6 +1090,10 @@ make
 | 192.352 (7C)  |          |              |          |                |
 | 199.360 (8C)  |          |              |          |                |
 
+</div>
+<div>
+
+
 ### การเปรียบเทียบ Tools
 | เครื่องมือ | ข้อดี | ข้อเสีย | เหมาะสำหรับ |
 |------------|-------|---------|--------------|
@@ -685,6 +1102,10 @@ make
 | ETISnoop | Deep analysis | ซับซ้อน | การวิเคราะห์ขั้นสูง |
 
 </div>
+
+---
+
+<div class="columns">
 <div>
 
 ## 📈 ข้อมูลที่ได้จากการทดสอบ
@@ -715,6 +1136,8 @@ echo "Test Complete!"
 </div>
 </div>
 
+---
+
 ## 🎯 Trap Exercises LAB 5:
 
 ### **Trap 5.1: Tool Performance Comparison**
@@ -743,19 +1166,27 @@ echo "Test Complete!"
 - [ ] ใช้ `which rtl_test` หา location
 - [ ] Re-install rtl-sdr package
 
+
+</div>
+<div>
+
 ### **3. ETISnoop ไม่ compile**
 - [ ] ติดตั้ง missing dependencies
 - [ ] ใช้ `sudo apt install build-essential`
 - [ ] ตรวจสอบ CMake version
-
-</div>
-<div>
 
 ### **4. ไม่พบสัญญาณ DAB+**
 - [ ] ตรวจสอบตำแหน่งเสาอากาศ (วางแนวตั้ง)
 - [ ] ลองย้ายไปใกล้หน้าต่าง
 - [ ] เปลี่ยน gain setting ใน tools ต่างๆ
 - [ ] ทดสอบใน welle.io ก่อน
+</div>
+<div>
+
+---
+## 🚫 ปัญหาที่พบบ่อยและการแก้ไข
+<div class="columns">
+<div>
 
 ### **5. เสียงไม่ดี/กระตุก**
 - [ ] ตรวจสอบ CPU usage (`top` command)
@@ -768,7 +1199,7 @@ echo "Test Complete!"
 - **Location**: ทดสอบในพื้นที่ที่ระบุใน NBTC frequency plan
 
 </div>
-</div>
+<div>
 
 ### 🎯 ผลลัพธ์ที่คาดหวังหลังจบ Labs 1-5:
 - [ ] ติดตั้งและใช้งาน RTL-SDR V4 ได้
@@ -778,6 +1209,9 @@ echo "Test Complete!"
 - [ ] เข้าใจพารามิเตอร์คุณภาพสัญญาณ
 - [ ] แก้ไขปัญหาเบื้องต้นได้
 - [ ] เปรียบเทียบประสิทธิภาพของ tools ต่างๆ
+
+</div>
+</div>
 
 ---
 
@@ -987,15 +1421,18 @@ pulseaudio -k
 </div>
 <div>
 
-## 🚀 ระดับสูง (Development-based)
-1. **Lab 1**: RTL-SDR Setup + Traps (2 ชม.)
-2. **Lab 2**: welle.io Integration + Traps (2 ชม.)
-3. **Lab 3**: Spectrum Analysis + Traps (2 ชม.)
-4. **Lab 4**: Station Scanner + Traps (2 ชม.)
-5. **Lab 5**: Program Recorder + Traps (2 ชม.)
-6. **Lab 6**: Signal Analyzer + Traps (2 ชม.)
+## 🚀 หลักสูตรหลัก + การบ้าน
+### หลักสูตรหลัก (ผู้สอน 14-15 ชั่วโมง)
+1. **Lab 1**: RTL-SDR Setup (2-3 ชม.)
+2. **Lab 2**: welle.io Integration (3-4 ชม.)
+3. **Lab 3**: DAB+ RTL-SDR Pipeline (5 phases, 9-8 ชม.)
 
-**⏱️ เวลา**: ~12 ชั่วโมง
+### การบ้าน (นักเรียนทำเอง 9-12 ชั่วโมง)
+4. **Lab 4**: Station Scanner (3-4 ชม.)
+5. **Lab 5**: Program Recorder (3-4 ชม.)
+6. **Lab 6**: Signal Analyzer (3-4 ชม.)
+
+**⏱️ เวลา**: ~23-27 ชั่วโมง
 **🎯 เป้าหมาย**: Professional DAB+ Applications
 
 </div>
@@ -1105,7 +1542,7 @@ pulseaudio -k
 ## 🎉 ขอบคุณที่เรียนรู้กับเรา!
 
 **DAB+ Labs** เป็นโครงการ Open Source  
-สำหรับการศึกษาและพัฒนาเทคโนโลยี
+สำหรับการศึกษาและพัฒนาเทคโนโลยี เพื่อให้ความรู้่เกี่ยวกับ ระบบวิทยุดิจิตอล DAB+ และการจัดทำเครื่องรับ DAB+ ด้วยตนเอง จัดการอบรมโดย กสทช.
 
 **🌟 ขอให้สนุกกับการเรียนรู้!**
 

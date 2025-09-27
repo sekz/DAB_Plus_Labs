@@ -1,16 +1,15 @@
-# LAB 4: สร้าง DAB+ Station Scanner
+# LAB 4: สร้าง DAB+ Station Scanner (การบ้าน)
 
 ## วัตถุประสงค์
-- พัฒนาแอปพลิเคชันสแกนและติดตามสถานี DAB+ อัตโนมัติ
-- สร้างระบบติดตามคุณภาพสัญญาณแบบ real-time
-- บันทึกประวัติการสแกนและสร้างฐานข้อมูลสถานี
-- พัฒนา GUI แบบ touch-friendly สำหรับหน้าจอ 7"
+- สร้างแอปพลิเคชันสแกนสถานี DAB+ อย่างง่าย
+- ใช้ Lab 3 pipeline สำหรับหาสถานี
+- เก็บข้อมูลสถานีในฐานข้อมูล SQLite
+- สร้าง GUI พื้นฐานสำหรับแสดงผล
 
 ## ความรู้พื้นฐานที่ต้องมี
-- ความเข้าใจจาก Lab 1-3 (RTL-SDR, welle.io, pyrtlsdr)
-- PyQt5 advanced GUI programming
-- การทำงานของ SQLite database
-- ความรู้เกี่ยวกับ DAB+ ensemble และ services
+- Lab 3 (RTL-SDR + ETI pipeline)
+- PyQt5 พื้นฐาน
+- SQLite พื้นฐาน
 
 ## อุปกรณ์ที่ใช้
 - **Raspberry Pi 4** พร้อม RTL-SDR V4 dongle
@@ -20,18 +19,11 @@
 
 ## การเตรียมระบบ
 
-### คำสั่งติดตั้ง Dependencies:
+### คำสั่งติดตั้ง:
 
 ```bash
-# ติดตั้ง database และ data processing tools
 sudo apt install -y sqlite3 python3-sqlite3
-pip3 install pandas matplotlib seaborn
-
-# ติดตั้ง GUI enhancements
-pip3 install PyQt5 qtawesome
-
-# ติดตั้ง async programming support
-pip3 install asyncio aiohttp
+pip3 install PyQt5 matplotlib
 ```
 
 ## ขั้นตอนการทำงาน
@@ -54,368 +46,120 @@ cd Labs/Lab4
 python3 lab4.py
 ```
 
-## การเขียนโค้ด
+## งานที่ต้องทำ (ประมาณ 3-4 ชั่วโมง)
 
-### ส่วนที่ต้องเติมใน `lab4.py`:
-
-#### 1. DatabaseManager - การจัดการฐานข้อมูล:
+### 1. ปรับแต่ง Database (30 นาที):
 
 ```python
-import sqlite3
-from datetime import datetime
+def init_database(self):
+    # TODO: สร้างตาราง stations พื้นฐาน
+    # แค่ id, frequency, station_name, last_seen
+    pass
 
-class DatabaseManager:
-    def __init__(self, db_path="dab_stations.db"):
-        self.db_path = db_path
-        self.init_database()
-    
-    def init_database(self):
-        """สร้างตารางฐานข้อมูล"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # ตาราง ensembles
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS ensembles (
-                    id INTEGER PRIMARY KEY,
-                    frequency REAL NOT NULL,
-                    ensemble_id INTEGER,
-                    ensemble_label TEXT,
-                    scan_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # ตาราง services
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS services (
-                    id INTEGER PRIMARY KEY,
-                    ensemble_id INTEGER,
-                    service_id INTEGER,
-                    service_label TEXT,
-                    service_type TEXT,
-                    bitrate INTEGER,
-                    signal_quality REAL,
-                    FOREIGN KEY (ensemble_id) REFERENCES ensembles (id)
-                )
-            """)
-    
-    def add_ensemble(self, frequency, ensemble_id, label):
-        """เพิ่ม ensemble ใหม่"""
-        # TODO: เติมโค้ดเพิ่ม ensemble ลงฐานข้อมูล
-        pass
-    
-    def add_service(self, ensemble_id, service_id, label, service_type, bitrate, quality):
-        """เพิ่ม service ใหม่"""
-        # TODO: เติมโค้ดเพิ่ม service ลงฐานข้อมูล
-        pass
+def add_station(self, station_data):
+    # TODO: เพิ่มสถานีลงฐานข้อมูล
+    pass
 ```
 
-#### 2. DABScanner - การสแกนอัตโนมัติ:
+### 2. Scanner ใช้ Lab 3 (1.5 ชั่วโมง):
 
 ```python
-class DABScanner(QThread):
-    ensemble_found = pyqtSignal(dict)
-    service_found = pyqtSignal(dict)
-    scan_progress = pyqtSignal(int, str)
-    scan_completed = pyqtSignal(int, int)  # ensembles, services
-    
-    def __init__(self):
-        super().__init__()
-        self.frequencies = [
-            174.928, 176.640, 178.352, 180.064, 181.936,
-            183.648, 185.360, 187.072, 188.928, 190.640
-        ]
-        self.is_scanning = False
-        
-    def scan_all_frequencies(self):
-        """สแกนทุกความถี่ DAB+"""
-        total_freqs = len(self.frequencies)
-        ensemble_count = 0
-        service_count = 0
-        
-        for i, frequency in enumerate(self.frequencies):
-            if not self.is_scanning:
-                break
-                
-            self.scan_progress.emit(
-                int((i / total_freqs) * 100),
-                f"กำลังสแกน {frequency} MHz..."
-            )
-            
-            # TODO: เติมโค้ดสแกนความถี่
-            # 1. รัน welle-io หรือใช้ pyrtlsdr
-            # 2. ตรวจหา ensemble
-            # 3. แปลง service information
-            # 4. ส่ง signals
-            
-        self.scan_completed.emit(ensemble_count, service_count)
+def scan_frequency(self, frequency):
+    # TODO: ใช้ Lab 3 RTL-SDR + ETI parser
+    # TODO: หาสถานี DAB+ ในความถี่นี้
+    # TODO: return รายการสถานีที่พบ
+    pass
+
+def run(self):
+    # TODO: สแกนความถี่ 185.360 MHz และ 202.928 MHz
+    # TODO: ส่ง progress signals
+    pass
 ```
 
-#### 3. StationListWidget - แสดงรายการสถานี:
+### 3. แสดงรายการสถานี (1 ชั่วโมง):
 
 ```python
-class StationListWidget(QWidget):
-    station_selected = pyqtSignal(dict)
-    
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        
-        # Search box
-        search_layout = QHBoxLayout()
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText(" ค้นหาสถานี...")
-        self.search_input.setMinimumHeight(40)
-        self.search_btn = QPushButton("ค้นหา")
-        self.search_btn.setMinimumSize(80, 40)
-        
-        search_layout.addWidget(self.search_input)
-        search_layout.addWidget(self.search_btn)
-        layout.addLayout(search_layout)
-        
-        # Station tree
-        self.station_tree = QTreeWidget()
-        self.station_tree.setHeaderLabels([
-            "สถานี", "ความถี่", "คุณภาพ", "Bitrate", "ประเภท"
-        ])
-        
-        # ปรับขนาดสำหรับหน้าจอสัมผัส
-        self.station_tree.setMinimumHeight(300)
-        header = self.station_tree.header()
-        header.setDefaultSectionSize(120)
-        
-        layout.addWidget(self.station_tree)
-        
-        # Filter buttons
-        filter_layout = QHBoxLayout()
-        self.all_btn = QPushButton("ทั้งหมด")
-        self.audio_btn = QPushButton(" เสียง")
-        self.data_btn = QPushButton(" ข้อมูล")
-        
-        for btn in [self.all_btn, self.audio_btn, self.data_btn]:
-            btn.setMinimumSize(100, 40)
-            filter_layout.addWidget(btn)
-            
-        layout.addLayout(filter_layout)
+def setup_ui(self):
+    # TODO: สร้าง QTableWidget แสดงสถานี
+    # คอลัมน์: ชื่อ, ความถี่, เวลาที่พบ
+    # TODO: ปุ่ม Refresh และ Clear
+    pass
+
+def refresh_stations(self):
+    # TODO: โหลดข้อมูลจากฐานข้อมูล
+    # TODO: แสดงในตาราง
+    pass
 ```
 
-#### 4. SignalQualityMonitor - ติดตามคุณภาพ:
+### 4. Main Window (1 ชั่วโมง):
 
 ```python
-class SignalQualityMonitor(QWidget):
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        
-        # Signal meters
-        self.rssi_meter = QProgressBar()
-        self.rssi_meter.setOrientation(Qt.Horizontal)
-        self.rssi_meter.setRange(-100, -20)
-        self.rssi_meter.setValue(-60)
-        self.rssi_meter.setFormat("RSSI: %v dBm")
-        
-        self.snr_meter = QProgressBar()
-        self.snr_meter.setRange(0, 30)
-        self.snr_meter.setValue(15)
-        self.snr_meter.setFormat("SNR: %v dB")
-        
-        self.ber_meter = QProgressBar()
-        self.ber_meter.setRange(0, 100)
-        self.ber_meter.setValue(5)
-        self.ber_meter.setFormat("BER: %v%")
-        
-        # Labels
-        layout.addWidget(QLabel(" ความแรงสัญญาณ (RSSI):"))
-        layout.addWidget(self.rssi_meter)
-        layout.addWidget(QLabel(" อัตราส่วนสัญญาณต่อสัญญาณรบกวน (SNR):"))
-        layout.addWidget(self.snr_meter)
-        layout.addWidget(QLabel(" อัตราข้อผิดพลาด (BER):"))
-        layout.addWidget(self.ber_meter)
-        
-    def update_quality(self, rssi, snr, ber):
-        """อัพเดทค่าคุณภาพสัญญาณ"""
-        # TODO: เติมโค้ดอัพเดทค่าต่างๆ
-        pass
+def setup_ui(self):
+    # TODO: สร้าง Tab Widget
+    # Tab 1: Scanner (ปุ่ม Start/Stop + Progress)
+    # Tab 2: Station List
+    pass
+
+def start_scan(self):
+    # TODO: เริ่มการสแกน
+    pass
 ```
 
-#### 5. ScanHistoryWidget - ประวัติการสแกน:
+### 5. เชื่อมต่อ Signals (30 นาที):
 
 ```python
-class ScanHistoryWidget(QWidget):
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        
-        # History table
-        self.history_table = QTableWidget()
-        self.history_table.setColumnCount(5)
-        self.history_table.setHorizontalHeaderLabels([
-            "วันที่", "จำนวน Ensemble", "จำนวน Service", 
-            "คุณภาพเฉลี่ย", "หมายเหตุ"
-        ])
-        
-        # ปรับขนาดตาราง
-        self.history_table.setMinimumHeight(200)
-        header = self.history_table.horizontalHeader()
-        header.setStretchLastSection(True)
-        
-        layout.addWidget(self.history_table)
-        
-        # Control buttons
-        button_layout = QHBoxLayout()
-        self.export_btn = QPushButton(" ส่งออก CSV")
-        self.clear_btn = QPushButton(" ล้างประวัติ")
-        self.refresh_btn = QPushButton(" รีเฟรช")
-        
-        for btn in [self.export_btn, self.clear_btn, self.refresh_btn]:
-            btn.setMinimumSize(120, 40)
-            button_layout.addWidget(btn)
-            
-        layout.addLayout(button_layout)
-    
-    def load_history(self):
-        """โหลดประวัติการสแกน"""
-        # TODO: เติมโค้ดโหลดจากฐานข้อมูล
-        pass
+def setup_connections(self):
+    # TODO: เชื่อมต่อ scanner signals กับ UI
+    # TODO: station_found → update database
+    # TODO: scan_completed → refresh list
+    pass
 ```
 
-### คำแนะนำการเขียน:
-
-1. **ใช้ SQLite** สำหรับเก็บข้อมูลสถานี
-2. **ใช้ QThread** สำหรับการสแกนแบบไม่บล็อก GUI
-3. **ใช้ QTimer** สำหรับ real-time monitoring
-4. **ออกแบบ UI ให้เหมาะกับการสัมผัส**
+## เป้าหมายของการบ้าน
+- เข้าใจการใช้ Lab 3 pipeline
+- เรียนรู้ SQLite พื้นฐาน
+- สร้าง GUI ด้วย QThread
+- สแกนได้อย่างน้อย 2 ความถี่
 
 ## ผลลัพธ์ที่คาดหวัง
 
-### 1. GUI Application ที่สมบูรณ์:
-- หน้าต่างแบ่งเป็น 4 ส่วน: scanner, stations, quality, history
-- การสแกนอัตโนมัติพร้อม progress indicator
-- รายการสถานีที่สามารถกรอง filter ได้
-- การติดตามคุณภาพสัญญาณแบบ real-time
-
-### 2. การทำงานของระบบ:
+### การทำงานพื้นฐาน:
 ```
- เริ่มต้น DAB+ Scanner...
- เชื่อมต่อ RTL-SDR สำเร็จ
- เชื่อมต่อฐานข้อมูล สำเร็จ
-
- กำลังสแกน DAB+ Band III...
- 174.928 MHz: พบ Thai PBS Ensemble (3 services)
- 176.640 MHz: พบ Voice TV Ensemble (2 services)  
- 178.352 MHz: ไม่พบสัญญาณ
- 181.936 MHz: พบ Private Network (4 services)
-
- สแกนเสร็จสิ้น: 3 ensembles, 9 services
- บันทึกลงฐานข้อมูลแล้ว
-
- สถิติคุณภาพเฉลี่ย:
-   RSSI: -52 dBm
-   SNR: 18.3 dB  
-   BER: 2.1%
+DAB+ Scanner เริ่มต้น...
+สแกน 185.360 MHz: พบ 3 สถานี
+สแกน 202.928 MHz: พบ 2 สถานี
+บันทึกลงฐานข้อมูลแล้ว
 ```
 
-### 3. ไฟล์ที่สร้างขึ้น:
-- `dab_stations.db`: ฐานข้อมูล SQLite
-- `scan_export_*.csv`: ไฟล์ส่งออกข้อมูล
-- `quality_log_*.json`: บันทึกคุณภาพสัญญาณ
+### ไฟล์ที่สร้าง:
+- `dab_stations.db`: ฐานข้อมูลสถานี
+- Screenshot ของ GUI ที่ทำงานได้
 
-## 🎯 Trap Exercises
+## หัวข้อขยาย (ถ้าเหลือเวลา)
 
-### Trap 4.1: Database Design และ Optimization Challenge
-**เป้าหมาย**: ออกแบบและปรับแต่งฐานข้อมูลสำหรับเก็บข้อมูลสถานี DAB+
+1. **เพิ่มความถี่ให้ครบ** สำหรับ Thailand DAB+
+2. **Export เป็น CSV**
+3. **Progress bar แสดงการสแกน**
+4. **Signal strength indicator**
 
-**โจทย์**:
-1. ออกแบบ database schema ที่มีประสิทธิภาพสำหรับเก็บ ensemble, service, และ scan history
-2. สร้าง indexes ที่เหมาะสมเพื่อเพิ่มความเร็วในการ query
-3. Implement database migration system สำหรับการอัพเดท schema
-4. สร้าง backup และ restore functionality
+## Tips การทำงาน
 
-**Hints**:
-- ใช้ foreign key เพื่อเชื่อมโยง ensembles กับ services
-- Index frequency, timestamp สำหรับ scan history
-- ใช้ PRAGMA commands เพื่อปรับแต่ง SQLite
-- WAL mode เพื่อการเขียนที่เร็วขึ้น
+1. **เริ่มจาก Database** สร้างตารางก่อน
+2. **ทดสอบ Lab 3** ให้ทำงานได้ก่อน
+3. **GUI พื้นฐาน** ไม่ต้องสวย แค่ใช้งานได้
+4. **Mock Data** ถ้า RTL-SDR ไม่มี
 
-### Trap 4.2: Advanced Scanning Algorithm
-**เป้าหมาย**: พัฒนาอัลกอริทึมการสแกนที่ชาญฉลาดและมีประสิทธิภาพ
+## การส่งงาน
 
-**โจทย์**:
-1. สร้าง adaptive scanning ที่ปรับ scan time ตามความแรงสัญญาณ
-2. Implement priority-based scanning (สแกนความถี่ที่เคยพบสถานีก่อน)
-3. สร้าง background monitoring สำหรับสถานีที่รู้จักแล้ว
-4. ใช้ machine learning เพื่อทำนายความน่าจะเป็นที่จะพบสถานี
+1. **ไฟล์ที่ต้องส่ง:**
+   - `lab4.py` (โค้ดที่แก้แล้ว)
+   - `dab_stations.db` (ฐานข้อมูล)
+   - Screenshot ของ GUI
 
-**Hints**:
-- Strong signal = สแกนเร็ว, Weak signal = สแกนช้า
-- เก็บ success rate ของแต่ละความถี่
-- ใช้ threading สำหรับ background monitoring
-- Simple ML: ใช้ historical data ทำนาย probability
-
-### Trap 4.3: Signal Quality Analysis และ Visualization
-**เป้าหมาย**: วิเคราะห์และแสดงผลคุณภาพสัญญาณแบบละเอียด
-
-**โจทย์**:
-1. สร้าง real-time signal quality dashboard
-2. Implement signal quality trending และ alerting system
-3. สร้าง coverage map visualization
-4. วิเคราะห์ correlation ระหว่าง เวลา/สภาพอากาศ กับคุณภาพสัญญาณ
-
-**Hints**:
-- ใช้ matplotlib หรือ pyqtgraph สำหรับ real-time plotting
-- Moving average สำหรับ signal trending
-- GPS coordinates สำหรับ coverage mapping
-- เก็บ timestamp และ weather data สำหรับ correlation
-
-### Trap 4.4: Touch-Optimized GUI Design
-**เป้าหมาย**: สร้าง GUI ที่เหมาะสมสำหรับหน้าจอสัมผัส 7"
-
-**โจทย์**:
-1. ออกแบบ responsive layout ที่ใช้งานง่ายด้วยนิ้ว
-2. สร้าง gesture support (swipe, pinch-to-zoom)
-3. Implement custom widgets สำหรับการแสดงผลข้อมูลสถานี
-4. เพิ่ม accessibility features (ขนาดตัวอักษร, contrast)
-
-**Hints**:
-- Touch targets ต้องมีขนาดอย่างน้อย 44x44 pixels
-- ใช้ QScroller สำหรับ smooth scrolling
-- Custom QWidget สำหรับ station display cards
-- QSettings เพื่อเก็บ user preferences
-
-## การแก้ไขปัญหา
-
-### ปัญหา 1: สแกนช้า
-**วิธีแก้**:
-```python
-# ปรับ timeout สำหรับแต่ละความถี่
-scan_timeout = 5  # วินาที แทน 10 วินาที
-
-# ใช้ threading pool
-from concurrent.futures import ThreadPoolExecutor
-with ThreadPoolExecutor(max_workers=3) as executor:
-    futures = [executor.submit(scan_frequency, freq) for freq in frequencies]
-```
-
-### ปัญหา 2: Database locked
-**วิธีแก้**:
-```python
-# ใช้ context manager
-with sqlite3.connect(self.db_path, timeout=30.0) as conn:
-    cursor = conn.cursor()
-    # database operations
-
-# หรือใช้ WAL mode
-conn.execute("PRAGMA journal_mode=WAL")
-```
-
-## คำถามทบทวน
-
-1. **DAB+ Ensemble และ Service ต่างกันอย่างไร?**
-   - ตอบ: Ensemble คือ multiplex ที่มี Service หลายตัว, Service คือสถานีแต่ละสถานี
-
-2. **ทำไมต้องใช้ Database สำหรับเก็บข้อมูลสถานี?**
-   - ตอบ: เพื่อเก็บประวัติและสามารถค้นหา filter ได้อย่างมีประสิทธิภาพ
-
-3. **Signal Quality Parameters มีความหมายอย่างไร?**
-   - ตอบ: RSSI = ความแรงสัญญาณ, SNR = สัญญาณต่อสัญญาณรบกวน, BER = อัตราข้อผิดพลาด
+2. **เกณฑ์การให้คะแนน:**
+   - สแกนได้อย่างน้อย 1 ความถี่ (30%)
+   - บันทึกลงฐานข้อมูลได้ (30%)
+   - GUI แสดงผลได้ (40%)
 
 ---
-
-**หมายเหตุ**: Lab นี้ต้องการเสาอากาศที่ดีและสถานี DAB+ ในพื้นที่เพื่อให้การสแกนได้ผลลัพธ์ที่ดี
+**หมายเหตุ**: การบ้านนี้ใช้เวลาประมาณ 3-4 ชั่วโมง

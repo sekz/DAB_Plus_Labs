@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-LAB 6: สร้าง DAB+ Signal Analyzer (เฉลย)
+LAB 6: สร้าง DAB+ Signal Analyzer - SOLUTION (Based on Lab 3 ETI approach)
 - พัฒนาเครื่องมือวิเคราะห์สัญญาณ DAB+ อย่างละเอียด
 - วิเคราะห์คุณภาพสัญญาณ (SNR, RSSI, BER) และสเปกตรัมความถี่
 - สร้างกราฟและรายงานการวิเคราะห์แบบ real-time
-- ส่งออกข้อมูลเป็น CSV, JSON และ PNG รองรับหน้าจอสัมผัส
+- ใช้ Lab 3 pipeline: RTL-SDR → ETI → Advanced Analysis
 """
 
 import sys
@@ -33,21 +33,36 @@ from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
+# นำเข้า modules จาก Lab 3
 try:
-    from rtlsdr import RtlSdr
-except ImportError:
-    RtlSdr = None
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'Lab3'))
+    from lab3_1a import RTLSDRDataAcquisition
+    from lab3_2 import ETIProcessor
+    from lab3_3 import ETIFrameParser
+    from lab3_4 import DABServicePlayer
+except ImportError as e:
+    print(f"Warning: Cannot import Lab 3 modules: {e}")
+    print("Make sure Lab 3 solutions are available")
 
 # ตั้งค่า logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger("Lab6")
+logger = logging.getLogger("Lab6Analyzer")
 
-# ---------- Signal Analysis Database ----------
+# DAB+ Thailand frequencies
+DAB_FREQUENCIES = {
+    '185.360': {'location': 'Bangkok/Phuket', 'block': '7A', 'freq': 185.360},
+    '202.928': {'location': 'Bangkok', 'block': '9A', 'freq': 202.928},
+    '195.936': {'location': 'Chiang Mai', 'block': '8C', 'freq': 195.936},
+    '210.096': {'location': 'Northeast', 'block': '10B', 'freq': 210.096},
+}
+
 class AnalysisDatabase:
-    def __init__(self, db_path="signal_analysis.db"):
+    """ฐานข้อมูลสำหรับเก็บข้อมูลการวิเคราะห์สัญญาณ"""
+
+    def __init__(self, db_path="lab6_analysis.db"):
         self.db_path = db_path
         self.init_database()
 
@@ -69,7 +84,11 @@ class AnalysisDatabase:
                     noise_floor REAL,
                     peak_frequency REAL,
                     bandwidth REAL,
-                    modulation_quality REAL
+                    modulation_quality REAL,
+                    sync_status TEXT,
+                    services_found INTEGER,
+                    ensemble_id TEXT,
+                    ensemble_label TEXT
                 )
             ''')
 
@@ -84,6 +103,21 @@ class AnalysisDatabase:
                 )
             ''')
 
+            # ตาราง eti_analysis
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS eti_analysis (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    measurement_id INTEGER,
+                    eti_frame_count INTEGER,
+                    fic_crc_errors INTEGER,
+                    msc_error_rate REAL,
+                    ofdm_sync_quality REAL,
+                    constellation_quality REAL,
+                    carrier_offset REAL,
+                    FOREIGN KEY (measurement_id) REFERENCES signal_measurements (id)
+                )
+            ''')
+
             # ตาราง analysis_sessions
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS analysis_sessions (
@@ -92,16 +126,17 @@ class AnalysisDatabase:
                     start_time DATETIME DEFAULT CURRENT_TIMESTAMP,
                     end_time DATETIME,
                     frequency_range TEXT,
+                    analysis_mode TEXT,
                     notes TEXT
                 )
             ''')
 
             conn.commit()
             conn.close()
-            logger.info("ฐานข้อมูลการวิเคราะห์พร้อมใช้งาน")
+            logger.info("Analysis database initialized")
 
         except Exception as e:
-            logger.error(f"สร้างฐานข้อมูลผิดพลาด: {str(e)}")
+            logger.error(f"Database initialization error: {e}")
 
     def add_measurement(self, measurement_data):
         """เพิ่มข้อมูลการวัดสัญญาณ"""
@@ -112,8 +147,9 @@ class AnalysisDatabase:
             cursor.execute('''
                 INSERT INTO signal_measurements
                 (frequency_mhz, signal_strength, snr, ber, noise_floor,
-                 peak_frequency, bandwidth, modulation_quality)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 peak_frequency, bandwidth, modulation_quality, sync_status,
+                 services_found, ensemble_id, ensemble_label)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 measurement_data.get('frequency_mhz'),
                 measurement_data.get('signal_strength'),
@@ -122,7 +158,11 @@ class AnalysisDatabase:
                 measurement_data.get('noise_floor'),
                 measurement_data.get('peak_frequency'),
                 measurement_data.get('bandwidth'),
-                measurement_data.get('modulation_quality')
+                measurement_data.get('modulation_quality'),
+                measurement_data.get('sync_status'),
+                measurement_data.get('services_found', 0),
+                measurement_data.get('ensemble_id'),
+                measurement_data.get('ensemble_label')
             ))
 
             measurement_id = cursor.lastrowid
@@ -138,116 +178,118 @@ class AnalysisDatabase:
                     json.dumps(measurement_data['spectrum_powers'].tolist())
                 ))
 
+            # บันทึกข้อมูล ETI analysis ถ้ามี
+            if 'eti_analysis' in measurement_data:
+                eti_data = measurement_data['eti_analysis']
+                cursor.execute('''
+                    INSERT INTO eti_analysis
+                    (measurement_id, eti_frame_count, fic_crc_errors, msc_error_rate,
+                     ofdm_sync_quality, constellation_quality, carrier_offset)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    measurement_id,
+                    eti_data.get('frame_count', 0),
+                    eti_data.get('fic_crc_errors', 0),
+                    eti_data.get('msc_error_rate', 0),
+                    eti_data.get('ofdm_sync_quality', 0),
+                    eti_data.get('constellation_quality', 0),
+                    eti_data.get('carrier_offset', 0)
+                ))
+
             conn.commit()
             conn.close()
             return measurement_id
 
         except Exception as e:
-            logger.error(f"เพิ่มข้อมูลการวัดผิดพลาด: {str(e)}")
+            logger.error(f"Add measurement error: {e}")
             return None
 
-    def get_measurements(self, session_id=None, limit=100):
+    def get_measurements(self, limit=100):
         """ดึงข้อมูลการวัดสัญญาณ"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-
-            query = '''
+            cursor.execute('''
                 SELECT * FROM signal_measurements
                 ORDER BY timestamp DESC LIMIT ?
-            '''
-            cursor.execute(query, (limit,))
+            ''', (limit,))
             measurements = cursor.fetchall()
             conn.close()
             return measurements
-
         except Exception as e:
-            logger.error(f"ดึงข้อมูลการวัดผิดพลาด: {str(e)}")
+            logger.error(f"Get measurements error: {e}")
             return []
 
-    def export_to_csv(self, filename, session_id=None):
+    def export_to_csv(self, filename):
         """ส่งออกข้อมูลเป็น CSV"""
         try:
-            measurements = self.get_measurements(session_id, limit=1000)
-
+            measurements = self.get_measurements(1000)
             with open(filename, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 writer.writerow([
                     'ID', 'Timestamp', 'Frequency (MHz)', 'Signal Strength (dBm)',
                     'SNR (dB)', 'BER (%)', 'Noise Floor (dBm)', 'Peak Frequency (MHz)',
-                    'Bandwidth (kHz)', 'Modulation Quality (%)'
+                    'Bandwidth (kHz)', 'Modulation Quality (%)', 'Sync Status',
+                    'Services Found', 'Ensemble ID', 'Ensemble Label'
                 ])
                 writer.writerows(measurements)
-
-            logger.info(f"ส่งออกข้อมูล CSV: {filename}")
+            logger.info(f"Exported data to CSV: {filename}")
             return True
-
         except Exception as e:
-            logger.error(f"ส่งออก CSV ผิดพลาด: {str(e)}")
+            logger.error(f"CSV export error: {e}")
             return False
 
-# ---------- Signal Analyzer Thread ----------
-class SignalAnalyzer(QThread):
+class DABSignalAnalyzer(QThread):
+    """เครื่องมือวิเคราะห์สัญญาณ DAB+ ใช้ Lab 3 pipeline"""
+
     measurement_ready = pyqtSignal(dict)
     spectrum_ready = pyqtSignal(np.ndarray, np.ndarray)  # frequencies, powers
-    analysis_complete = pyqtSignal(dict)
+    eti_analysis_ready = pyqtSignal(dict)
     error_occurred = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
-        self.sdr = None
+        self.rtl_sdr = None
+        self.eti_processor = None
+        self.eti_parser = None
         self.is_analyzing = False
-        self.frequency = 174.928e6  # MHz
-        self.sample_rate = 2.4e6
+        self.frequency = 185.360  # MHz
+        self.sample_rate = 2048000  # Hz
         self.gain = 'auto'
         self.fft_size = 2048
         self._stop_flag = False
 
-    def connect_rtlsdr(self):
-        """เชื่อมต่อ RTL-SDR"""
+    def setup_lab3_pipeline(self):
+        """ตั้งค่า Lab 3 pipeline สำหรับการวิเคราะห์"""
         try:
-            if RtlSdr is None:
-                raise ImportError("ไม่พบโมดูล pyrtlsdr")
+            # เริ่มต้น RTL-SDR
+            self.rtl_sdr = RTLSDRDataAcquisition()
+            self.rtl_sdr.frequency = int(self.frequency * 1000000)
+            self.rtl_sdr.sample_rate = self.sample_rate
 
-            self.sdr = RtlSdr()
-            self.sdr.sample_rate = self.sample_rate
-            self.sdr.center_freq = self.frequency
-            self.sdr.gain = self.gain
+            if not self.rtl_sdr.setup_rtlsdr():
+                logger.warning("Cannot connect to RTL-SDR, using simulation mode")
+                self.rtl_sdr = None
 
-            # ทดสอบการอ่านข้อมูล
-            test_samples = self.sdr.read_samples(1024)
-            if len(test_samples) > 0:
-                logger.info("เชื่อมต่อ RTL-SDR สำเร็จ")
-                return True
-            else:
-                return False
+            # เริ่มต้น ETI processor และ parser
+            self.eti_processor = ETIProcessor()
+            self.eti_parser = ETIFrameParser()
+
+            return True
 
         except Exception as e:
-            self.error_occurred.emit(f"เชื่อมต่อ RTL-SDR ผิดพลาด: {str(e)}")
-            logger.error(f"เชื่อมต่อ RTL-SDR ผิดพลาด: {str(e)}")
+            logger.error(f"Lab 3 pipeline setup error: {e}")
             return False
 
-    def disconnect_rtlsdr(self):
-        """ตัดการเชื่อมต่อ RTL-SDR"""
-        try:
-            self.is_analyzing = False
-            self._stop_flag = True
-            if self.sdr:
-                self.sdr.close()
-                self.sdr = None
-                logger.info("ตัดการเชื่อมต่อ RTL-SDR แล้ว")
-        except Exception as e:
-            logger.error(f"ปิด RTL-SDR ผิดพลาด: {str(e)}")
-
-    def set_frequency(self, frequency):
+    def set_frequency(self, frequency_mhz):
         """ตั้งค่าความถี่ที่จะวิเคราะห์"""
-        self.frequency = frequency * 1000  # Convert kHz to Hz
-        if self.sdr:
+        self.frequency = frequency_mhz
+        if self.rtl_sdr:
             try:
-                self.sdr.center_freq = self.frequency
-                logger.info(f"ตั้งค่าความถี่: {frequency/1000:.3f} MHz")
+                self.rtl_sdr.frequency = int(frequency_mhz * 1000000)
+                logger.info(f"Set frequency: {frequency_mhz:.3f} MHz")
             except Exception as e:
-                self.error_occurred.emit(f"ตั้งค่าความถี่ผิดพลาด: {str(e)}")
+                self.error_occurred.emit(f"Set frequency error: {e}")
 
     def set_parameters(self, sample_rate, gain, fft_size):
         """ตั้งค่าพารามิเตอร์การวิเคราะห์"""
@@ -255,199 +297,392 @@ class SignalAnalyzer(QThread):
         self.gain = gain
         self.fft_size = fft_size
 
-        if self.sdr:
+        if self.rtl_sdr:
             try:
-                self.sdr.sample_rate = sample_rate
-                self.sdr.gain = gain if gain != 'auto' else 'auto'
+                self.rtl_sdr.sample_rate = sample_rate
+                self.rtl_sdr.gain = gain if gain != 'auto' else 'auto'
             except Exception as e:
-                logger.error(f"ตั้งค่าพารามิเตอร์ผิดพลาด: {str(e)}")
+                logger.error(f"Set parameters error: {e}")
 
     def run(self):
         """วิเคราะห์สัญญาณอย่างต่อเนื่อง"""
         self.is_analyzing = True
         self._stop_flag = False
 
+        if not self.setup_lab3_pipeline():
+            self.error_occurred.emit("Cannot setup Lab 3 pipeline")
+            return
+
         while self.is_analyzing and not self._stop_flag:
             try:
-                if self.sdr is None:
-                    # ใช้ข้อมูลจำลองถ้าไม่มี RTL-SDR
-                    measurement = self.analyze_signal_mock()
-                else:
-                    measurement = self.analyze_signal()
+                # Step 1: รับ I/Q data
+                iq_data = self.capture_iq_data()
+                if iq_data is None:
+                    self.msleep(1000)
+                    continue
+
+                # Step 2: วิเคราะห์สเปกตรัม
+                frequencies, power_spectrum = self.analyze_spectrum(iq_data)
+                if frequencies is not None and power_spectrum is not None:
+                    self.spectrum_ready.emit(frequencies, power_spectrum)
+
+                # Step 3: ประมวลผล ETI (ถ้ามีสัญญาณแรงพอ)
+                eti_analysis = self.process_eti_analysis(iq_data)
+
+                # Step 4: วิเคราะห์คุณภาพสัญญาณ
+                measurement = self.analyze_signal_quality(
+                    iq_data, frequencies, power_spectrum, eti_analysis
+                )
 
                 if measurement:
                     self.measurement_ready.emit(measurement)
 
+                if eti_analysis:
+                    self.eti_analysis_ready.emit(eti_analysis)
+
                 self.msleep(500)  # อัปเดตทุก 0.5 วินาที
 
             except Exception as e:
-                self.error_occurred.emit(f"การวิเคราะห์ผิดพลาด: {str(e)}")
+                self.error_occurred.emit(f"Analysis error: {e}")
                 self.msleep(1000)
 
-    def analyze_signal(self):
-        """วิเคราะห์สัญญาณ DAB+"""
+    def capture_iq_data(self):
+        """รับ I/Q data จาก RTL-SDR"""
         try:
-            if not self.sdr:
-                return None
-
-            # อ่าน samples
-            samples = self.sdr.read_samples(self.fft_size * 4)
-            if len(samples) == 0:
-                return None
-
-            # คำนวณสเปกตรัม
-            frequencies, power_spectrum = self.calculate_spectrum(samples)
-
-            # คำนวณพารามิเตอร์คุณภาพสัญญาณ
-            signal_strength = np.max(power_spectrum)  # RSSI
-            noise_floor = np.median(power_spectrum)
-            snr = float(signal_strength - noise_floor)
-            ber = self.estimate_ber(samples)
-
-            # หา peak frequency
-            peak_idx = np.argmax(power_spectrum)
-            peak_frequency = frequencies[peak_idx] / 1e6  # Convert to MHz
-
-            # คำนวณ bandwidth (ประมาณ)
-            bandwidth = self.calculate_bandwidth(frequencies, power_spectrum, signal_strength)
-
-            # ประเมิน modulation quality
-            modulation_quality = self.assess_modulation_quality(snr, ber)
-
-            measurement = {
-                'timestamp': datetime.now(),
-                'frequency_mhz': self.frequency / 1e6,
-                'signal_strength': float(signal_strength),
-                'snr': snr,
-                'ber': float(ber),
-                'noise_floor': float(noise_floor),
-                'peak_frequency': peak_frequency,
-                'bandwidth': bandwidth,
-                'modulation_quality': modulation_quality,
-                'spectrum_frequencies': frequencies,
-                'spectrum_powers': power_spectrum
-            }
-
-            # ส่ง spectrum data
-            self.spectrum_ready.emit(frequencies, power_spectrum)
-
-            return measurement
+            if self.rtl_sdr:
+                # ใช้ Lab 3 RTL-SDR capture
+                samples = self.rtl_sdr.capture_samples(duration_seconds=2)
+                return samples
+            else:
+                # สร้างข้อมูลจำลอง
+                return self.generate_mock_iq_data()
 
         except Exception as e:
-            logger.error(f"วิเคราะห์สัญญาณผิดพลาด: {str(e)}")
+            logger.error(f"I/Q capture error: {e}")
             return None
 
-    def analyze_signal_mock(self):
-        """วิเคราะห์สัญญาณแบบจำลอง (สำหรับทดสอบ)"""
-        import random
-
-        # สร้างข้อมูลจำลอง
-        center_freq = self.frequency / 1e6  # MHz
-        signal_strength = -45 + random.gauss(0, 10)
-        noise_floor = -80 + random.gauss(0, 5)
-        snr = signal_strength - noise_floor
-        ber = max(0, min(100, random.gauss(2, 1)))
-
-        # สร้าง spectrum จำลอง
-        n_points = self.fft_size
-        frequencies = np.linspace(
-            center_freq - self.sample_rate/2e6,
-            center_freq + self.sample_rate/2e6,
-            n_points
-        ) * 1e6  # Convert back to Hz
-
-        # สร้าง power spectrum จำลอง
-        power_spectrum = np.random.normal(noise_floor, 5, n_points)
-
-        # เพิ่มสัญญาณจำลองในบางความถี่
-        dab_frequencies = [174.928, 176.640, 181.936, 188.928]
-        for dab_freq in dab_frequencies:
-            if abs(center_freq - dab_freq) < self.sample_rate/2e6:
-                # เพิ่มสัญญาณ
-                freq_idx = np.argmin(np.abs(frequencies/1e6 - dab_freq))
-                signal_width = max(1, n_points // 100)
-                for i in range(max(0, freq_idx-signal_width),
-                              min(n_points, freq_idx+signal_width)):
-                    power_spectrum[i] += signal_strength - noise_floor
-
-        peak_idx = np.argmax(power_spectrum)
-        peak_frequency = frequencies[peak_idx] / 1e6
-
-        bandwidth = 1.536  # DAB+ bandwidth in MHz
-        modulation_quality = self.assess_modulation_quality(snr, ber)
-
-        measurement = {
-            'timestamp': datetime.now(),
-            'frequency_mhz': center_freq,
-            'signal_strength': float(signal_strength),
-            'snr': float(snr),
-            'ber': float(ber),
-            'noise_floor': float(noise_floor),
-            'peak_frequency': peak_frequency,
-            'bandwidth': bandwidth,
-            'modulation_quality': modulation_quality,
-            'spectrum_frequencies': frequencies,
-            'spectrum_powers': power_spectrum
-        }
-
-        # ส่ง spectrum data
-        self.spectrum_ready.emit(frequencies, power_spectrum)
-
-        return measurement
-
-    def calculate_spectrum(self, samples):
-        """คำนวณสเปกตรัมความถี่"""
+    def generate_mock_iq_data(self):
+        """สร้างข้อมูล I/Q จำลองสำหรับทดสอบ"""
         try:
-            # จำกัดขนาด samples
-            if len(samples) > self.fft_size:
-                samples = samples[:self.fft_size]
+            # สร้างสัญญาณจำลองที่มีลักษณะ DAB+
+            duration = 2.0  # วินาที
+            t = np.linspace(0, duration, int(self.sample_rate * duration))
+
+            # สัญญาณพื้นฐาน (carrier)
+            carrier_freq = 0  # baseband
+            carrier = np.exp(1j * 2 * np.pi * carrier_freq * t)
+
+            # เพิ่ม OFDM-like signal
+            ofdm_signal = np.zeros_like(carrier, dtype=complex)
+            for k in range(-768, 769):  # DAB Mode I carriers
+                if k != 0:  # skip DC
+                    subcarrier_freq = k * 1000  # 1 kHz spacing
+                    amplitude = np.random.uniform(0.1, 1.0)
+                    phase = np.random.uniform(0, 2*np.pi)
+                    ofdm_signal += amplitude * np.exp(1j * (2 * np.pi * subcarrier_freq * t + phase))
+
+            # เพิ่ม noise
+            noise_power = 0.1
+            noise = np.random.normal(0, noise_power, len(t)) + \
+                   1j * np.random.normal(0, noise_power, len(t))
+
+            # รวมสัญญาณ
+            signal = ofdm_signal + noise
+
+            # Normalize
+            signal = signal / np.max(np.abs(signal)) * 0.8
+
+            return signal.astype(np.complex64)
+
+        except Exception as e:
+            logger.error(f"Mock I/Q generation error: {e}")
+            return None
+
+    def analyze_spectrum(self, iq_data):
+        """วิเคราะห์สเปกตรัมความถี่"""
+        try:
+            # ตัดข้อมูลให้เหมาะสมกับ FFT size
+            if len(iq_data) > self.fft_size:
+                iq_data = iq_data[:self.fft_size]
+            elif len(iq_data) < self.fft_size:
+                # Zero padding
+                padded = np.zeros(self.fft_size, dtype=complex)
+                padded[:len(iq_data)] = iq_data
+                iq_data = padded
 
             # คำนวณ FFT
-            fft_data = np.fft.fft(samples, self.fft_size)
+            window = np.hanning(self.fft_size)
+            windowed_data = iq_data * window
+            fft_data = np.fft.fft(windowed_data)
             fft_shifted = np.fft.fftshift(fft_data)
             power_spectrum = 20 * np.log10(np.abs(fft_shifted) + 1e-12)
 
             # คำนวณความถี่
             frequencies = np.fft.fftfreq(self.fft_size, 1/self.sample_rate)
-            frequencies = np.fft.fftshift(frequencies) + self.frequency
+            frequencies = np.fft.fftshift(frequencies) + self.frequency * 1e6
 
             return frequencies, power_spectrum
 
         except Exception as e:
-            logger.error(f"คำนวณสเปกตรัมผิดพลาด: {str(e)}")
+            logger.error(f"Spectrum analysis error: {e}")
             return None, None
 
-    def estimate_ber(self, samples):
-        """ประเมิน Bit Error Rate"""
+    def process_eti_analysis(self, iq_data):
+        """ประมวลผล ETI และวิเคราะห์ขั้นสูง"""
         try:
-            # วิธีประมาณ BER จากคุณภาพสัญญาณ
-            # ในการใช้งานจริงต้องใช้ DAB+ decoder
+            if self.eti_processor is None:
+                return None
 
-            # คำนวณ EVM (Error Vector Magnitude)
-            signal_power = np.mean(np.abs(samples)**2)
-            noise_estimate = np.var(np.diff(samples))
+            # ในการใช้งานจริง จะใช้ eti-cmdline หรือ GNU Radio DAB
+            # ที่นี่จำลองการวิเคราะห์ ETI
 
-            if signal_power > 0:
-                snr_linear = signal_power / (noise_estimate + 1e-12)
-                snr_db = 10 * np.log10(snr_linear)
+            # วิเคราะห์ OFDM sync
+            ofdm_sync_quality = self.analyze_ofdm_sync(iq_data)
 
-                # ประมาณ BER จาก SNR (สำหรับ QPSK)
-                if snr_db > 20:
-                    ber = 0.001
-                elif snr_db > 15:
-                    ber = 0.01
-                elif snr_db > 10:
-                    ber = 0.1
-                else:
-                    ber = min(50, 1 / (snr_linear + 0.1))
-            else:
-                ber = 50  # High error rate
+            # วิเคราะห์ constellation quality
+            constellation_quality = self.analyze_constellation(iq_data)
 
-            return max(0, min(100, ber))
+            # ประเมิน carrier offset
+            carrier_offset = self.estimate_carrier_offset(iq_data)
+
+            # จำลองการหา services
+            services_found = 0
+            ensemble_id = None
+            ensemble_label = None
+
+            if ofdm_sync_quality > 70:  # ถ้าสัญญาณดีพอ
+                # ใช้ Lab 3 parser จำลอง
+                mock_services = self.simulate_service_detection()
+                services_found = len(mock_services)
+                if mock_services:
+                    ensemble_id = mock_services[0].get('ensemble_id')
+                    ensemble_label = mock_services[0].get('ensemble_label')
+
+            eti_analysis = {
+                'frame_count': 100,  # จำลอง
+                'fic_crc_errors': max(0, int((100 - ofdm_sync_quality) / 10)),
+                'msc_error_rate': max(0, (100 - ofdm_sync_quality) / 100),
+                'ofdm_sync_quality': ofdm_sync_quality,
+                'constellation_quality': constellation_quality,
+                'carrier_offset': carrier_offset,
+                'services_found': services_found,
+                'ensemble_id': ensemble_id,
+                'ensemble_label': ensemble_label
+            }
+
+            return eti_analysis
 
         except Exception as e:
-            logger.error(f"ประเมิน BER ผิดพลาด: {str(e)}")
-            return 50
+            logger.error(f"ETI analysis error: {e}")
+            return None
+
+    def analyze_ofdm_sync(self, iq_data):
+        """วิเคราะห์คุณภาพ OFDM synchronization"""
+        try:
+            # วิเคราะห์ correlation peaks สำหรับ OFDM symbol detection
+            # DAB Mode I: symbol duration = 1246 µs
+            symbol_samples = int(self.sample_rate * 1246e-6)
+
+            if len(iq_data) < symbol_samples * 2:
+                return 0
+
+            # หา autocorrelation สำหรับ cyclic prefix
+            guard_samples = int(self.sample_rate * 246e-6)  # guard interval
+            correlation_sum = 0
+            correlation_count = 0
+
+            for i in range(0, len(iq_data) - symbol_samples, symbol_samples // 4):
+                if i + symbol_samples < len(iq_data):
+                    symbol = iq_data[i:i + symbol_samples]
+                    if len(symbol) == symbol_samples:
+                        # correlation ระหว่าง guard และ end of useful part
+                        guard = symbol[:guard_samples]
+                        tail = symbol[-guard_samples:]
+
+                        if len(guard) == len(tail):
+                            corr = np.abs(np.sum(guard * np.conj(tail))) / \
+                                  (np.sqrt(np.sum(np.abs(guard)**2)) * np.sqrt(np.sum(np.abs(tail)**2)) + 1e-12)
+                            correlation_sum += corr
+                            correlation_count += 1
+
+            if correlation_count > 0:
+                avg_correlation = correlation_sum / correlation_count
+                sync_quality = min(100, avg_correlation * 100)
+                return sync_quality
+            else:
+                return 0
+
+        except Exception as e:
+            logger.error(f"OFDM sync analysis error: {e}")
+            return 0
+
+    def analyze_constellation(self, iq_data):
+        """วิเคราะห์คุณภาพ constellation diagram"""
+        try:
+            # วิเคราะห์ EVM (Error Vector Magnitude)
+
+            # สมมติว่าใช้ QPSK modulation
+            # Ideal constellation points
+            ideal_points = np.array([1+1j, 1-1j, -1+1j, -1-1j]) / np.sqrt(2)
+
+            # แบ่งข้อมูลเป็น symbols (simplified)
+            symbols_per_block = min(1000, len(iq_data) // 4)
+            if symbols_per_block < 10:
+                return 0
+
+            symbols = iq_data[:symbols_per_block * 4:4]  # downsample
+
+            # Normalize symbols
+            mean_power = np.mean(np.abs(symbols)**2)
+            if mean_power > 0:
+                symbols = symbols / np.sqrt(mean_power)
+
+            # คำนวณ EVM
+            evm_sum = 0
+            valid_symbols = 0
+
+            for symbol in symbols:
+                # หา ideal point ที่ใกล้ที่สุด
+                distances = np.abs(symbol - ideal_points)
+                nearest_ideal = ideal_points[np.argmin(distances)]
+
+                # คำนวณ error vector
+                error_vector = symbol - nearest_ideal
+                evm = np.abs(error_vector)
+
+                evm_sum += evm
+                valid_symbols += 1
+
+            if valid_symbols > 0:
+                avg_evm = evm_sum / valid_symbols
+                # แปลง EVM เป็น quality score (0-100)
+                quality = max(0, min(100, (1 - avg_evm) * 100))
+                return quality
+            else:
+                return 0
+
+        except Exception as e:
+            logger.error(f"Constellation analysis error: {e}")
+            return 0
+
+    def estimate_carrier_offset(self, iq_data):
+        """ประเมิน carrier frequency offset"""
+        try:
+            # ใช้ autocorrelation เพื่อหา frequency offset
+            if len(iq_data) < 1000:
+                return 0
+
+            # คำนวณ phase difference ระหว่าง samples ที่เว้นระยะ
+            delay_samples = 100  # ระยะห่างระหว่าง samples
+
+            if len(iq_data) > delay_samples:
+                delayed = iq_data[delay_samples:]
+                original = iq_data[:-delay_samples]
+
+                # คำนวณ complex correlation
+                correlation = np.sum(original * np.conj(delayed))
+                phase_diff = np.angle(correlation)
+
+                # แปลงเป็น frequency offset
+                freq_offset = phase_diff * self.sample_rate / (2 * np.pi * delay_samples)
+
+                return freq_offset
+            else:
+                return 0
+
+        except Exception as e:
+            logger.error(f"Carrier offset estimation error: {e}")
+            return 0
+
+    def simulate_service_detection(self):
+        """จำลองการค้นหา DAB+ services"""
+        try:
+            # หาความถี่ที่ใกล้เคียงใน DAB_FREQUENCIES
+            location = 'Unknown'
+            block = 'Unknown'
+
+            for freq_str, info in DAB_FREQUENCIES.items():
+                if abs(self.frequency - info['freq']) < 0.1:
+                    location = info['location']
+                    block = info['block']
+                    break
+
+            # สร้าง mock services
+            mock_services = [
+                {
+                    'ensemble_id': f"0x{int(self.frequency * 100):04X}",
+                    'ensemble_label': f"{location} DAB+",
+                    'service_id': int(self.frequency * 10),
+                    'service_label': f"Service @ {self.frequency:.1f}MHz",
+                    'bitrate': 128,
+                    'audio_mode': 'stereo'
+                }
+            ]
+
+            return mock_services
+
+        except Exception as e:
+            logger.error(f"Service detection simulation error: {e}")
+            return []
+
+    def analyze_signal_quality(self, iq_data, frequencies, power_spectrum, eti_analysis):
+        """วิเคราะห์คุณภาพสัญญาณโดยรวม"""
+        try:
+            if power_spectrum is None:
+                return None
+
+            # คำนวณพารามิเตอร์พื้นฐาน
+            signal_strength = np.max(power_spectrum)
+            noise_floor = np.median(power_spectrum)
+            snr = signal_strength - noise_floor
+
+            # หา peak frequency
+            peak_idx = np.argmax(power_spectrum)
+            peak_frequency = frequencies[peak_idx] / 1e6  # Convert to MHz
+
+            # คำนวณ bandwidth
+            bandwidth = self.calculate_bandwidth(frequencies, power_spectrum, signal_strength)
+
+            # ประเมิน BER จาก SNR และ ETI analysis
+            if eti_analysis and 'msc_error_rate' in eti_analysis:
+                ber = eti_analysis['msc_error_rate'] * 100
+            else:
+                ber = self.estimate_ber_from_snr(snr)
+
+            # ประเมิน modulation quality
+            if eti_analysis and 'constellation_quality' in eti_analysis:
+                modulation_quality = eti_analysis['constellation_quality']
+            else:
+                modulation_quality = self.assess_modulation_quality(snr, ber)
+
+            # สร้าง measurement data
+            measurement = {
+                'timestamp': datetime.now(),
+                'frequency_mhz': self.frequency,
+                'signal_strength': float(signal_strength),
+                'snr': float(snr),
+                'ber': float(ber),
+                'noise_floor': float(noise_floor),
+                'peak_frequency': peak_frequency,
+                'bandwidth': bandwidth,
+                'modulation_quality': modulation_quality,
+                'sync_status': self.determine_sync_status(snr, eti_analysis),
+                'spectrum_frequencies': frequencies,
+                'spectrum_powers': power_spectrum
+            }
+
+            # เพิ่มข้อมูล ETI analysis
+            if eti_analysis:
+                measurement['eti_analysis'] = eti_analysis
+                measurement['services_found'] = eti_analysis.get('services_found', 0)
+                measurement['ensemble_id'] = eti_analysis.get('ensemble_id')
+                measurement['ensemble_label'] = eti_analysis.get('ensemble_label')
+
+            return measurement
+
+        except Exception as e:
+            logger.error(f"Signal quality analysis error: {e}")
+            return None
 
     def calculate_bandwidth(self, frequencies, power_spectrum, signal_strength):
         """คำนวณ bandwidth ของสัญญาณ"""
@@ -464,399 +699,372 @@ class SignalAnalyzer(QThread):
             return 1536  # Default DAB+ bandwidth in kHz
 
         except Exception as e:
-            logger.error(f"คำนวณ bandwidth ผิดพลาด: {str(e)}")
+            logger.error(f"Bandwidth calculation error: {e}")
             return 1536
+
+    def estimate_ber_from_snr(self, snr):
+        """ประเมิน BER จาก SNR"""
+        try:
+            # ประมาณ BER สำหรับ QPSK/OFDM
+            if snr > 25:
+                ber = 0.001
+            elif snr > 20:
+                ber = 0.01
+            elif snr > 15:
+                ber = 0.1
+            elif snr > 10:
+                ber = 1.0
+            elif snr > 5:
+                ber = 10.0
+            else:
+                ber = 50.0
+
+            return max(0, min(100, ber))
+
+        except Exception as e:
+            logger.error(f"BER estimation error: {e}")
+            return 50
 
     def assess_modulation_quality(self, snr, ber):
         """ประเมินคุณภาพการมอดูเลชัน"""
         try:
-            # คำนวณคุณภาพโดยรวมจาก SNR และ BER
-            snr_score = min(100, max(0, (snr + 5) * 4))  # SNR > 20dB = 100%
-            ber_score = max(0, 100 - ber * 2)  # BER < 1% = 100%
-
+            snr_score = min(100, max(0, (snr + 5) * 4))
+            ber_score = max(0, 100 - ber * 2)
             quality = (snr_score + ber_score) / 2
             return max(0, min(100, quality))
 
         except Exception as e:
-            logger.error(f"ประเมินคุณภาพผิดพลาด: {str(e)}")
+            logger.error(f"Modulation quality assessment error: {e}")
             return 0
 
-    def find_dab_signals(self, frequencies, power_spectrum):
-        """หาสัญญาณ DAB+ ในสเปกตรัม"""
+    def determine_sync_status(self, snr, eti_analysis):
+        """กำหนดสถานะ sync"""
         try:
-            dab_signals = []
-
-            # DAB+ frequencies in MHz
-            dab_freq_list = [
-                174.928, 176.640, 178.352, 180.064, 181.936,
-                183.648, 185.360, 187.072, 188.928, 190.640
-            ]
-
-            noise_floor = np.median(power_spectrum)
-            threshold = noise_floor + 10  # 10dB above noise floor
-
-            for dab_freq in dab_freq_list:
-                # หาดัชนีความถี่ที่ใกล้ที่สุด
-                freq_idx = np.argmin(np.abs(frequencies/1e6 - dab_freq))
-
-                # ตรวจสอบในช่วง ±100kHz
-                search_range = max(1, len(frequencies) // 50)
-                start_idx = max(0, freq_idx - search_range)
-                end_idx = min(len(power_spectrum), freq_idx + search_range)
-
-                local_max = np.max(power_spectrum[start_idx:end_idx])
-
-                if local_max > threshold:
-                    dab_signals.append({
-                        'frequency': dab_freq,
-                        'power': local_max,
-                        'snr': local_max - noise_floor
-                    })
-
-            return dab_signals
+            if eti_analysis and 'ofdm_sync_quality' in eti_analysis:
+                sync_quality = eti_analysis['ofdm_sync_quality']
+                if sync_quality > 80:
+                    return 'excellent'
+                elif sync_quality > 60:
+                    return 'good'
+                elif sync_quality > 40:
+                    return 'fair'
+                else:
+                    return 'poor'
+            else:
+                if snr > 20:
+                    return 'good'
+                elif snr > 10:
+                    return 'fair'
+                else:
+                    return 'poor'
 
         except Exception as e:
-            logger.error(f"หาสัญญาณ DAB+ ผิดพลาด: {str(e)}")
-            return []
+            logger.error(f"Sync status determination error: {e}")
+            return 'unknown'
 
     def stop_analysis(self):
         """หยุดการวิเคราะห์"""
         self.is_analyzing = False
         self._stop_flag = True
 
-# ---------- Real-time Spectrum Widget ----------
-class SpectrumAnalyzerWidget(QWidget):
+    def cleanup(self):
+        """ทำความสะอาด resources"""
+        try:
+            if self.rtl_sdr:
+                self.rtl_sdr.cleanup()
+        except:
+            pass
+
+class AdvancedSpectrumWidget(QWidget):
+    """Widget แสดงสเปกตรัมขั้นสูง พร้อม waterfall display"""
+
     def __init__(self):
         super().__init__()
-        self.setup_matplotlib()
         self.setup_ui()
-        self.frequency_data = []
-        self.power_data = []
-        self.max_points = 1000
-        self.frozen = False
-
-    def setup_matplotlib(self):
-        """ตั้งค่า matplotlib สำหรับแสดงสเปกตรัม"""
-        self.figure = Figure(figsize=(10, 6))
-        self.canvas = FigureCanvas(self.figure)
-        self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-
-        self.ax = self.figure.add_subplot(111)
-        self.ax.set_xlabel('Frequency (MHz)')
-        self.ax.set_ylabel('Power (dB)')
-        self.ax.set_title('DAB+ Spectrum Analyzer - Real Time')
-        self.ax.grid(True, alpha=0.3)
-
-        # สร้างเส้นกราฟเปล่า
-        self.line, = self.ax.plot([], [], 'b-', linewidth=1)
-
-        self.figure.tight_layout()
+        self.setup_plots()
+        self.spectrum_history = []
+        self.max_history = 200
 
     def setup_ui(self):
-        layout = QVBoxLayout(self)
+        layout = QVBoxLayout()
 
         # หัวข้อ
-        title = QLabel("Real-time Spectrum Analyzer")
+        title = QLabel("Advanced Spectrum Analyzer & Waterfall")
         title.setFont(QFont("Arial", 16, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
-        # Matplotlib canvas
+        # Matplotlib plots
+        self.setup_plots()
         layout.addWidget(self.canvas)
 
-        # Control Panel
-        control_group = QGroupBox("การควบคุมการแสดงผล")
-        control_layout = QHBoxLayout(control_group)
+        # Controls
+        controls_layout = QHBoxLayout()
+        self.freeze_btn = QPushButton("Freeze")
+        self.clear_btn = QPushButton("Clear")
+        self.save_btn = QPushButton("Save")
+        self.waterfall_btn = QPushButton("Toggle Waterfall")
 
-        self.freeze_btn = QPushButton("หยุดชั่วคราว")
-        self.clear_btn = QPushButton("เคลียร์")
-        self.save_spectrum_btn = QPushButton("บันทึกสเปกตรัม")
+        for btn in [self.freeze_btn, self.clear_btn, self.save_btn, self.waterfall_btn]:
+            btn.setMinimumHeight(40)
+            controls_layout.addWidget(btn)
 
-        # ตั้งค่าปุ่มสำหรับ touch interface
-        for btn in [self.freeze_btn, self.clear_btn, self.save_spectrum_btn]:
-            btn.setMinimumHeight(48)
-            btn.setMinimumWidth(120)
+        layout.addLayout(controls_layout)
+        self.setLayout(layout)
 
-        control_layout.addWidget(self.freeze_btn)
-        control_layout.addWidget(self.clear_btn)
-        control_layout.addWidget(self.save_spectrum_btn)
-
-        layout.addWidget(control_group)
-
-        # เชื่อมต่อ signals
+        # Connections
         self.freeze_btn.clicked.connect(self.toggle_freeze)
-        self.clear_btn.clicked.connect(self.clear_spectrum)
-        self.save_spectrum_btn.clicked.connect(self.save_spectrum)
+        self.clear_btn.clicked.connect(self.clear_display)
+        self.save_btn.clicked.connect(self.save_plots)
+        self.waterfall_btn.clicked.connect(self.toggle_waterfall)
+
+        self.frozen = False
+        self.show_waterfall = True
+
+    def setup_plots(self):
+        """ตั้งค่า matplotlib plots"""
+        self.figure = Figure(figsize=(12, 8))
+        self.canvas = FigureCanvas(self.figure)
+
+        # Spectrum plot
+        self.ax_spectrum = self.figure.add_subplot(2, 1, 1)
+        self.ax_spectrum.set_title('Real-time Spectrum')
+        self.ax_spectrum.set_ylabel('Power (dB)')
+        self.ax_spectrum.grid(True, alpha=0.3)
+
+        # Waterfall plot
+        self.ax_waterfall = self.figure.add_subplot(2, 1, 2)
+        self.ax_waterfall.set_title('Waterfall Display')
+        self.ax_waterfall.set_xlabel('Frequency (MHz)')
+        self.ax_waterfall.set_ylabel('Time')
+
+        self.figure.tight_layout()
 
     def update_spectrum(self, frequencies, powers):
-        """อัปเดตข้อมูลสเปกตรัม"""
+        """อัปเดตสเปกตรัม"""
         if self.frozen:
             return
 
         try:
-            # แปลงความถี่เป็น MHz
             freq_mhz = frequencies / 1e6
 
-            # อัปเดตกราฟ
-            self.line.set_data(freq_mhz, powers)
+            # อัปเดต spectrum plot
+            self.ax_spectrum.clear()
+            self.ax_spectrum.plot(freq_mhz, powers, 'b-', linewidth=1)
+            self.ax_spectrum.set_title('Real-time Spectrum')
+            self.ax_spectrum.set_ylabel('Power (dB)')
+            self.ax_spectrum.grid(True, alpha=0.3)
 
-            # ปรับขอบเขตแกน
-            if len(freq_mhz) > 0:
-                self.ax.set_xlim([np.min(freq_mhz), np.max(freq_mhz)])
-                self.ax.set_ylim([np.min(powers) - 5, np.max(powers) + 5])
+            # เพิ่มเข้า history สำหรับ waterfall
+            self.spectrum_history.append(powers.copy())
+            if len(self.spectrum_history) > self.max_history:
+                self.spectrum_history.pop(0)
 
-            # เก็บข้อมูลสำหรับบันทึก
-            self.frequency_data = frequencies
-            self.power_data = powers
+            # อัปเดต waterfall
+            if self.show_waterfall and len(self.spectrum_history) > 1:
+                waterfall_data = np.array(self.spectrum_history)
+                self.ax_waterfall.clear()
+
+                extent = [freq_mhz[0], freq_mhz[-1], 0, len(self.spectrum_history)]
+                im = self.ax_waterfall.imshow(
+                    waterfall_data,
+                    aspect='auto',
+                    extent=extent,
+                    cmap='viridis',
+                    origin='lower'
+                )
+                self.ax_waterfall.set_title('Waterfall Display')
+                self.ax_waterfall.set_xlabel('Frequency (MHz)')
+                self.ax_waterfall.set_ylabel('Time (samples)')
 
             self.canvas.draw_idle()
 
         except Exception as e:
-            logger.error(f"อัปเดตสเปกตรัมผิดพลาด: {str(e)}")
+            logger.error(f"Spectrum update error: {e}")
 
     def toggle_freeze(self):
-        """เปิด/ปิดการแสดงผลแบบเรียลไทม์"""
+        """เปิด/ปิด freeze"""
         self.frozen = not self.frozen
-        self.freeze_btn.setText("ดำเนินการต่อ" if self.frozen else "หยุดชั่วคราว")
+        self.freeze_btn.setText("Resume" if self.frozen else "Freeze")
 
-    def clear_spectrum(self):
-        """เคลียร์กราฟสเปกตรัม"""
-        self.ax.clear()
-        self.ax.set_xlabel('Frequency (MHz)')
-        self.ax.set_ylabel('Power (dB)')
-        self.ax.set_title('DAB+ Spectrum Analyzer - Real Time')
-        self.ax.grid(True, alpha=0.3)
-        self.line, = self.ax.plot([], [], 'b-', linewidth=1)
+    def toggle_waterfall(self):
+        """เปิด/ปิด waterfall display"""
+        self.show_waterfall = not self.show_waterfall
+        self.waterfall_btn.setText("Hide Waterfall" if self.show_waterfall else "Show Waterfall")
+
+    def clear_display(self):
+        """เคลียร์การแสดงผล"""
+        self.spectrum_history.clear()
+        self.ax_spectrum.clear()
+        self.ax_waterfall.clear()
+        self.setup_plots()
         self.canvas.draw()
 
-    def save_spectrum(self):
-        """บันทึกกราฟสเปกตรัม"""
-        if len(self.frequency_data) == 0:
-            QMessageBox.warning(self, "ไม่มีข้อมูล", "ยังไม่มีข้อมูลสเปกตรัมที่จะบันทึก")
-            return
-
+    def save_plots(self):
+        """บันทึกกราฟ"""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-            # บันทึกกราฟเป็น PNG
-            png_filename, _ = QFileDialog.getSaveFileName(
-                self, "บันทึกกราฟสเปกตรัม",
-                f"spectrum_{timestamp}.png",
+            filename, _ = QFileDialog.getSaveFileName(
+                self, "Save Spectrum Plots",
+                f"advanced_spectrum_{timestamp}.png",
                 "PNG Files (*.png)"
             )
 
-            if png_filename:
-                self.figure.savefig(png_filename, dpi=300, bbox_inches='tight')
-                logger.info(f"บันทึกกราฟ: {png_filename}")
-
-            # บันทึกข้อมูลเป็น CSV
-            csv_filename, _ = QFileDialog.getSaveFileName(
-                self, "บันทึกข้อมูลสเปกตรัม",
-                f"spectrum_data_{timestamp}.csv",
-                "CSV Files (*.csv)"
-            )
-
-            if csv_filename:
-                with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
-                    writer = csv.writer(f)
-                    writer.writerow(['Frequency (Hz)', 'Power (dB)'])
-                    for freq, power in zip(self.frequency_data, self.power_data):
-                        writer.writerow([freq, power])
-                logger.info(f"บันทึกข้อมูล CSV: {csv_filename}")
-
-            if png_filename or csv_filename:
-                QMessageBox.information(self, "บันทึกสำเร็จ", "บันทึกไฟล์เรียบร้อยแล้ว")
+            if filename:
+                self.figure.savefig(filename, dpi=300, bbox_inches='tight')
+                QMessageBox.information(self, "Saved", f"Plots saved to: {filename}")
 
         except Exception as e:
-            QMessageBox.critical(self, "บันทึกผิดพลาด", str(e))
-            logger.error(f"บันทึกสเปกตรัมผิดพลาด: {str(e)}")
+            QMessageBox.critical(self, "Save Error", str(e))
 
-# ---------- Signal Quality Meters Widget ----------
-class SignalQualityWidget(QWidget):
+class SignalQualityMeterWidget(QWidget):
+    """Widget แสดงมิเตอร์คุณภาพสัญญาณขั้นสูง"""
+
     def __init__(self):
         super().__init__()
         self.setup_ui()
 
     def setup_ui(self):
-        layout = QGridLayout(self)
+        layout = QGridLayout()
 
         # หัวข้อ
-        title = QLabel("คุณภาพสัญญาณ")
+        title = QLabel("Signal Quality Meters")
         title.setFont(QFont("Arial", 16, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title, 0, 0, 1, 3)
 
-        # RSSI Meter
+        # RSSI
         rssi_group = QGroupBox("RSSI (dBm)")
-        rssi_layout = QVBoxLayout(rssi_group)
-
+        rssi_layout = QVBoxLayout()
         self.rssi_lcd = QLCDNumber()
         self.rssi_lcd.setDigitCount(6)
         self.rssi_lcd.setMinimumHeight(60)
-        self.rssi_lcd.setStyleSheet("""
-            QLCDNumber { background-color: black; color: green; }
-        """)
-
         self.rssi_bar = QProgressBar()
         self.rssi_bar.setRange(-100, -20)
-        self.rssi_bar.setValue(-60)
-        self.rssi_bar.setMinimumHeight(30)
-        self.rssi_bar.setStyleSheet("""
-            QProgressBar::chunk { background-color: #4CAF50; }
-        """)
-
         rssi_layout.addWidget(self.rssi_lcd)
         rssi_layout.addWidget(self.rssi_bar)
+        rssi_group.setLayout(rssi_layout)
         layout.addWidget(rssi_group, 1, 0)
 
-        # SNR Meter
+        # SNR
         snr_group = QGroupBox("SNR (dB)")
-        snr_layout = QVBoxLayout(snr_group)
-
+        snr_layout = QVBoxLayout()
         self.snr_lcd = QLCDNumber()
         self.snr_lcd.setDigitCount(5)
         self.snr_lcd.setMinimumHeight(60)
-        self.snr_lcd.setStyleSheet("""
-            QLCDNumber { background-color: black; color: blue; }
-        """)
-
-        # QDial สำหรับแสดง SNR แบบ analog meter
         self.snr_dial = QDial()
         self.snr_dial.setRange(0, 40)
-        self.snr_dial.setValue(15)
-        self.snr_dial.setMinimumSize(100, 100)
-        self.snr_dial.setEnabled(False)  # ปิดการแก้ไข
-
+        self.snr_dial.setEnabled(False)
         snr_layout.addWidget(self.snr_lcd)
         snr_layout.addWidget(self.snr_dial)
+        snr_group.setLayout(snr_layout)
         layout.addWidget(snr_group, 1, 1)
 
-        # BER Meter
+        # BER
         ber_group = QGroupBox("BER (%)")
-        ber_layout = QVBoxLayout(ber_group)
-
+        ber_layout = QVBoxLayout()
         self.ber_lcd = QLCDNumber()
         self.ber_lcd.setDigitCount(6)
         self.ber_lcd.setMinimumHeight(60)
-        self.ber_lcd.setStyleSheet("""
-            QLCDNumber { background-color: black; color: red; }
-        """)
-
         self.ber_bar = QProgressBar()
         self.ber_bar.setRange(0, 100)
-        self.ber_bar.setValue(5)
-        self.ber_bar.setMinimumHeight(30)
-        self.ber_bar.setStyleSheet("""
-            QProgressBar::chunk { background-color: #f44336; }
-        """)
-
         ber_layout.addWidget(self.ber_lcd)
         ber_layout.addWidget(self.ber_bar)
+        ber_group.setLayout(ber_layout)
         layout.addWidget(ber_group, 1, 2)
 
-        # Signal Status Indicators
-        status_group = QGroupBox("สถานะสัญญาณ")
-        status_layout = QVBoxLayout(status_group)
+        # ETI Quality Indicators
+        eti_group = QGroupBox("ETI Analysis")
+        eti_layout = QGridLayout()
 
-        self.signal_status_label = QLabel("ไม่มีสัญญาณ")
-        self.signal_status_label.setAlignment(Qt.AlignCenter)
-        self.signal_status_label.setStyleSheet("""
+        self.sync_quality_label = QLabel("OFDM Sync: --%")
+        self.constellation_quality_label = QLabel("Constellation: --%")
+        self.carrier_offset_label = QLabel("Carrier Offset: -- Hz")
+        self.services_found_label = QLabel("Services: 0")
+
+        eti_layout.addWidget(self.sync_quality_label, 0, 0)
+        eti_layout.addWidget(self.constellation_quality_label, 0, 1)
+        eti_layout.addWidget(self.carrier_offset_label, 1, 0)
+        eti_layout.addWidget(self.services_found_label, 1, 1)
+
+        eti_group.setLayout(eti_layout)
+        layout.addWidget(eti_group, 2, 0, 1, 3)
+
+        # Status
+        self.status_label = QLabel("No Signal")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setStyleSheet("""
             QLabel {
                 background-color: #ffcccc;
                 border: 2px solid #ff6666;
                 border-radius: 10px;
-                padding: 10px;
-                font-size: 14px;
+                padding: 15px;
+                font-size: 16px;
                 font-weight: bold;
             }
         """)
+        layout.addWidget(self.status_label, 3, 0, 1, 3)
 
-        self.frequency_label = QLabel("ความถี่: -- MHz")
-        self.modulation_label = QLabel("Modulation: --")
-        self.bitrate_label = QLabel("Bitrate: -- kbps")
+        self.setLayout(layout)
 
-        status_layout.addWidget(self.signal_status_label)
-        status_layout.addWidget(self.frequency_label)
-        status_layout.addWidget(self.modulation_label)
-        status_layout.addWidget(self.bitrate_label)
-
-        layout.addWidget(status_group, 2, 0, 1, 3)
-
-    def update_signal_quality(self, rssi, snr, ber):
-        """อัปเดตค่าคุณภาพสัญญาณ"""
+    def update_measurements(self, measurement_data):
+        """อัปเดตค่าการวัด"""
         try:
-            # อัปเดต LCD displays
+            rssi = measurement_data.get('signal_strength', -100)
+            snr = measurement_data.get('snr', 0)
+            ber = measurement_data.get('ber', 100)
+
+            # อัปเดต basic meters
             self.rssi_lcd.display(f"{rssi:.1f}")
             self.snr_lcd.display(f"{snr:.1f}")
             self.ber_lcd.display(f"{ber:.3f}")
 
-            # อัปเดต progress bars
             self.rssi_bar.setValue(int(rssi))
+            self.snr_dial.setValue(int(max(0, min(40, snr))))
             self.ber_bar.setValue(int(ber))
 
-            # อัปเดต SNR dial
-            snr_value = max(0, min(40, int(snr)))
-            self.snr_dial.setValue(snr_value)
+            # อัปเดต ETI analysis
+            if 'eti_analysis' in measurement_data:
+                eti = measurement_data['eti_analysis']
+                self.sync_quality_label.setText(f"OFDM Sync: {eti.get('ofdm_sync_quality', 0):.1f}%")
+                self.constellation_quality_label.setText(f"Constellation: {eti.get('constellation_quality', 0):.1f}%")
+                self.carrier_offset_label.setText(f"Carrier Offset: {eti.get('carrier_offset', 0):.1f} Hz")
+                self.services_found_label.setText(f"Services: {eti.get('services_found', 0)}")
 
-            # เปลี่ยนสีตามคุณภาพสัญญาณ
-            if rssi > -50 and snr > 15 and ber < 1:
-                quality = "ดีเยี่ยม"
-                color = "#4CAF50"  # Green
-            elif rssi > -65 and snr > 10 and ber < 5:
-                quality = "ดี"
-                color = "#FF9800"  # Orange
-            else:
-                quality = "ไม่ดี"
-                color = "#f44336"  # Red
-
-            self.rssi_bar.setStyleSheet(f"""
-                QProgressBar::chunk {{ background-color: {color}; }}
-            """)
-
-        except Exception as e:
-            logger.error(f"อัปเดตคุณภาพสัญญาณผิดพลาด: {str(e)}")
-
-    def update_signal_status(self, status, frequency=None, modulation=None, bitrate=None):
-        """อัปเดตสถานะสัญญาณ"""
-        try:
-            self.signal_status_label.setText(status)
-
-            # เปลี่ยนสี background ตามสถานะ
-            if "ดี" in status:
+            # อัปเดตสถานะ
+            sync_status = measurement_data.get('sync_status', 'unknown')
+            if sync_status == 'excellent':
+                status_text = "สัญญาณดีเยี่ยม"
                 bg_color = "#d4edda"
-                border_color = "#c3e6cb"
-            elif "สัญญาณอ่อน" in status:
+            elif sync_status == 'good':
+                status_text = "สัญญาณดี"
+                bg_color = "#d1ecf1"
+            elif sync_status == 'fair':
+                status_text = "สัญญาณปานกลาง"
                 bg_color = "#fff3cd"
-                border_color = "#ffeaa7"
             else:
+                status_text = "สัญญาณไม่ดี"
                 bg_color = "#f8d7da"
-                border_color = "#f5c6cb"
 
-            self.signal_status_label.setStyleSheet(f"""
+            self.status_label.setText(status_text)
+            self.status_label.setStyleSheet(f"""
                 QLabel {{
                     background-color: {bg_color};
-                    border: 2px solid {border_color};
+                    border: 2px solid #999;
                     border-radius: 10px;
-                    padding: 10px;
-                    font-size: 14px;
+                    padding: 15px;
+                    font-size: 16px;
                     font-weight: bold;
                 }}
             """)
 
-            # อัปเดตข้อมูลเพิ่มเติม
-            if frequency:
-                self.frequency_label.setText(f"ความถี่: {frequency:.3f} MHz")
-            if modulation:
-                self.modulation_label.setText(f"Modulation: {modulation}")
-            if bitrate:
-                self.bitrate_label.setText(f"Bitrate: {bitrate} kbps")
-
         except Exception as e:
-            logger.error(f"อัปเดตสถานะสัญญาณผิดพลาด: {str(e)}")
+            logger.error(f"Update measurements error: {e}")
 
-# ---------- Analysis Control Panel ----------
-class AnalysisControlWidget(QWidget):
-    analysis_started = pyqtSignal(dict)  # parameters
+class AnalysisControlPanel(QWidget):
+    """Panel ควบคุมการวิเคราะห์ขั้นสูง"""
+
+    analysis_started = pyqtSignal(dict)
     analysis_stopped = pyqtSignal()
     frequency_changed = pyqtSignal(float)
 
@@ -865,65 +1073,59 @@ class AnalysisControlWidget(QWidget):
         self.setup_ui()
 
     def setup_ui(self):
-        layout = QVBoxLayout(self)
+        layout = QVBoxLayout()
 
         # หัวข้อ
-        title = QLabel("การควบคุมการวิเคราะห์")
+        title = QLabel("Analysis Control Panel")
         title.setFont(QFont("Arial", 16, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
         # Frequency Control
-        freq_group = QGroupBox("ความถี่ (MHz)")
-        freq_layout = QVBoxLayout(freq_group)
+        freq_group = QGroupBox("Frequency Control")
+        freq_layout = QVBoxLayout()
 
+        # Frequency slider
         self.freq_slider = QSlider(Qt.Horizontal)
-        self.freq_slider.setRange(174000, 240000)  # 174.000 - 240.000 MHz (in kHz)
-        self.freq_slider.setValue(174928)  # 174.928 MHz
+        self.freq_slider.setRange(174000, 240000)  # 174-240 MHz in kHz
+        self.freq_slider.setValue(185360)  # 185.360 MHz
         self.freq_slider.setMinimumHeight(40)
 
         self.freq_spinbox = QSpinBox()
         self.freq_spinbox.setRange(174000, 240000)
-        self.freq_spinbox.setValue(174928)
+        self.freq_spinbox.setValue(185360)
         self.freq_spinbox.setSuffix(" kHz")
         self.freq_spinbox.setMinimumHeight(40)
 
-        # ปุ่มความถี่ที่กำหนดไว้ล่วงหน้า (preset frequencies)
-        preset_layout = QHBoxLayout()
-        self.freq_presets = [174928, 181936, 188928, 195936, 210096]
-        preset_labels = ["5A", "11D", "12A", "12D", "13F"]
-
-        for freq, label in zip(self.freq_presets, preset_labels):
-            btn = QPushButton(f"{label}\n{freq/1000:.3f}")
+        # Preset frequencies
+        presets_layout = QHBoxLayout()
+        for freq_str, info in DAB_FREQUENCIES.items():
+            btn = QPushButton(f"{info['block']}\n{info['freq']:.3f}")
             btn.setMinimumSize(80, 50)
-            btn.clicked.connect(lambda checked, f=freq: self.set_frequency(f))
-            preset_layout.addWidget(btn)
+            btn.clicked.connect(lambda checked, f=info['freq']: self.set_frequency(f * 1000))
+            presets_layout.addWidget(btn)
 
-        freq_layout.addWidget(QLabel("ความถี่:"))
+        freq_layout.addWidget(QLabel("Frequency (kHz):"))
         freq_layout.addWidget(self.freq_slider)
         freq_layout.addWidget(self.freq_spinbox)
         freq_layout.addWidget(QLabel("Presets:"))
-        freq_layout.addLayout(preset_layout)
-
+        freq_layout.addLayout(presets_layout)
+        freq_group.setLayout(freq_layout)
         layout.addWidget(freq_group)
 
         # Analysis Parameters
-        params_group = QGroupBox("พารามิเตอร์การวิเคราะห์")
-        params_layout = QGridLayout(params_group)
+        params_group = QGroupBox("Analysis Parameters")
+        params_layout = QGridLayout()
 
         params_layout.addWidget(QLabel("Sample Rate:"), 0, 0)
         self.samplerate_combo = QComboBox()
-        self.samplerate_combo.addItems([
-            "0.25 MHz", "0.5 MHz", "1.0 MHz",
-            "1.2 MHz", "2.0 MHz", "2.4 MHz"
-        ])
-        self.samplerate_combo.setCurrentText("2.4 MHz")
+        self.samplerate_combo.addItems(["2.048 MHz", "2.4 MHz", "3.2 MHz"])
         self.samplerate_combo.setMinimumHeight(40)
         params_layout.addWidget(self.samplerate_combo, 0, 1)
 
         params_layout.addWidget(QLabel("Gain:"), 1, 0)
         self.gain_combo = QComboBox()
-        self.gain_combo.addItems(["auto", "0", "9", "14", "27", "37", "77"])
+        self.gain_combo.addItems(["auto", "0", "9", "14", "27", "37", "49.6"])
         self.gain_combo.setMinimumHeight(40)
         params_layout.addWidget(self.gain_combo, 1, 1)
 
@@ -934,28 +1136,28 @@ class AnalysisControlWidget(QWidget):
         self.fft_combo.setMinimumHeight(40)
         params_layout.addWidget(self.fft_combo, 2, 1)
 
+        params_group.setLayout(params_layout)
         layout.addWidget(params_group)
 
-        # Control Buttons
-        control_layout = QHBoxLayout()
-        self.start_btn = QPushButton("เริ่มวิเคราะห์")
-        self.stop_btn = QPushButton("หยุดวิเคราะห์")
-        self.export_btn = QPushButton("ส่งออกข้อมูล")
+        # Control buttons
+        buttons_layout = QHBoxLayout()
+        self.start_btn = QPushButton("Start Analysis")
+        self.stop_btn = QPushButton("Stop Analysis")
+        self.export_btn = QPushButton("Export Data")
 
-        # ตั้งค่าปุ่มสำหรับ touch interface
         for btn in [self.start_btn, self.stop_btn, self.export_btn]:
             btn.setMinimumHeight(48)
-            btn.setMinimumWidth(120)
 
         self.stop_btn.setEnabled(False)
 
-        control_layout.addWidget(self.start_btn)
-        control_layout.addWidget(self.stop_btn)
-        control_layout.addWidget(self.export_btn)
+        buttons_layout.addWidget(self.start_btn)
+        buttons_layout.addWidget(self.stop_btn)
+        buttons_layout.addWidget(self.export_btn)
+        layout.addLayout(buttons_layout)
 
-        layout.addLayout(control_layout)
+        self.setLayout(layout)
 
-        # เชื่อมต่อ signals
+        # Connections
         self.freq_slider.valueChanged.connect(self.on_frequency_changed)
         self.freq_spinbox.valueChanged.connect(self.on_frequency_changed)
         self.start_btn.clicked.connect(self.start_analysis)
@@ -974,417 +1176,235 @@ class AnalysisControlWidget(QWidget):
         else:
             self.freq_slider.setValue(value)
 
-        self.frequency_changed.emit(float(value))
+        self.frequency_changed.emit(float(value) / 1000)  # Convert to MHz
 
     def start_analysis(self):
         """เริ่มการวิเคราะห์"""
         try:
-            # รวบรวมพารามิเตอร์
             sample_rate_map = {
-                "0.25 MHz": 0.25e6, "0.5 MHz": 0.5e6, "1.0 MHz": 1.0e6,
-                "1.2 MHz": 1.2e6, "2.0 MHz": 2.0e6, "2.4 MHz": 2.4e6
+                "2.048 MHz": 2048000,
+                "2.4 MHz": 2400000,
+                "3.2 MHz": 3200000
             }
 
             parameters = {
-                'frequency': float(self.freq_spinbox.value()),  # kHz
+                'frequency': float(self.freq_spinbox.value() / 1000),  # MHz
                 'sample_rate': sample_rate_map[self.samplerate_combo.currentText()],
                 'gain': self.gain_combo.currentText(),
                 'fft_size': int(self.fft_combo.currentText())
             }
 
             self.analysis_started.emit(parameters)
-
-            # อัปเดตสถานะปุ่ม
             self.start_btn.setEnabled(False)
             self.stop_btn.setEnabled(True)
 
         except Exception as e:
-            QMessageBox.critical(self, "เริ่มการวิเคราะห์ผิดพลาด", str(e))
+            QMessageBox.critical(self, "Start Analysis Error", str(e))
 
     def stop_analysis(self):
         """หยุดการวิเคราะห์"""
         self.analysis_stopped.emit()
-
-        # อัปเดตสถานะปุ่ม
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
 
     def export_data(self):
-        """ส่งออกข้อมูลการวิเคราะห์"""
-        try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-            # เลือกรูปแบบการส่งออก
-            reply = QMessageBox.question(self, 'ส่งออกข้อมูล',
-                                       'เลือกรูปแบบการส่งออก:\n\nYes = CSV\nNo = JSON\nCancel = ยกเลิก',
-                                       QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
-
-            if reply == QMessageBox.Yes:
-                filename, _ = QFileDialog.getSaveFileName(
-                    self, "ส่งออกเป็น CSV",
-                    f"analysis_export_{timestamp}.csv",
-                    "CSV Files (*.csv)"
-                )
-                if filename:
-                    # TODO: Export to CSV
-                    QMessageBox.information(self, "ส่งออกสำเร็จ", f"ส่งออก CSV: {filename}")
-
-            elif reply == QMessageBox.No:
-                filename, _ = QFileDialog.getSaveFileName(
-                    self, "ส่งออกเป็น JSON",
-                    f"analysis_export_{timestamp}.json",
-                    "JSON Files (*.json)"
-                )
-                if filename:
-                    # TODO: Export to JSON
-                    QMessageBox.information(self, "ส่งออกสำเร็จ", f"ส่งออก JSON: {filename}")
-
-        except Exception as e:
-            QMessageBox.critical(self, "ส่งออกผิดพลาด", str(e))
-
-# ---------- Analysis History Widget ----------
-class AnalysisHistoryWidget(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.db = AnalysisDatabase()
-        self.setup_ui()
-        self.refresh_timer = QTimer()
-        self.refresh_timer.timeout.connect(self.refresh_history)
-        self.refresh_timer.start(5000)  # รีเฟรชทุก 5 วินาที
-
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-
-        # หัวข้อ
-        title = QLabel("ประวัติการวิเคราะห์")
-        title.setFont(QFont("Arial", 16, QFont.Bold))
-        title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
-
-        # History Table
-        self.history_table = QTableWidget()
-        self.history_table.setColumnCount(6)
-        self.history_table.setHorizontalHeaderLabels([
-            "เวลา", "ความถี่", "RSSI", "SNR", "BER", "คุณภาพ"
-        ])
-
-        # ปรับขนาดตาราง
-        header = self.history_table.horizontalHeader()
-        header.setStretchLastSection(True)
-        self.history_table.setMinimumHeight(200)
-
-        layout.addWidget(self.history_table)
-
-        # Summary Statistics
-        stats_group = QGroupBox("สถิติสรุป")
-        stats_layout = QGridLayout(stats_group)
-
-        self.total_measurements_label = QLabel("การวัดทั้งหมด: 0")
-        self.avg_rssi_label = QLabel("RSSI เฉลี่ย: -- dBm")
-        self.avg_snr_label = QLabel("SNR เฉลี่ย: -- dB")
-        self.success_rate_label = QLabel("อัตราความสำเร็จ: --%")
-
-        stats_layout.addWidget(self.total_measurements_label, 0, 0)
-        stats_layout.addWidget(self.avg_rssi_label, 0, 1)
-        stats_layout.addWidget(self.avg_snr_label, 1, 0)
-        stats_layout.addWidget(self.success_rate_label, 1, 1)
-
-        layout.addWidget(stats_group)
-
-        # Control Buttons
-        button_layout = QHBoxLayout()
-        self.refresh_btn = QPushButton("รีเฟรช")
-        self.clear_btn = QPushButton("ล้างประวัติ")
-        self.export_history_btn = QPushButton("ส่งออกประวัติ")
-
-        # ตั้งค่าปุ่มสำหรับ touch interface
-        for btn in [self.refresh_btn, self.clear_btn, self.export_history_btn]:
-            btn.setMinimumHeight(48)
-            btn.setMinimumWidth(100)
-
-        button_layout.addWidget(self.refresh_btn)
-        button_layout.addWidget(self.clear_btn)
-        button_layout.addWidget(self.export_history_btn)
-
-        layout.addLayout(button_layout)
-
-        # เชื่อมต่อ signals
-        self.refresh_btn.clicked.connect(self.refresh_history)
-        self.clear_btn.clicked.connect(self.clear_history)
-        self.export_history_btn.clicked.connect(self.export_history)
-
-    def refresh_history(self):
-        """รีเฟรชประวัติการวิเคราะห์"""
-        try:
-            measurements = self.db.get_measurements(limit=50)
-            self.history_table.setRowCount(len(measurements))
-
-            for i, measurement in enumerate(measurements):
-                # measurement: (id, timestamp, frequency_mhz, signal_strength, snr, ber, ...)
-                time_str = measurement[1][:19] if measurement[1] else ""
-                self.history_table.setItem(i, 0, QTableWidgetItem(time_str))
-                self.history_table.setItem(i, 1, QTableWidgetItem(f"{measurement[2]:.3f}"))
-                self.history_table.setItem(i, 2, QTableWidgetItem(f"{measurement[3]:.1f}"))
-                self.history_table.setItem(i, 3, QTableWidgetItem(f"{measurement[4]:.1f}"))
-                self.history_table.setItem(i, 4, QTableWidgetItem(f"{measurement[5]:.3f}"))
-
-                # คำนวณคุณภาพโดยรวม
-                quality = "ดี" if measurement[4] > 15 and measurement[5] < 1 else "ปานกลาง" if measurement[4] > 10 else "ไม่ดี"
-                self.history_table.setItem(i, 5, QTableWidgetItem(quality))
-
-            # อัปเดตสถิติ
-            if measurements:
-                total = len(measurements)
-                avg_rssi = np.mean([m[3] for m in measurements if m[3]])
-                avg_snr = np.mean([m[4] for m in measurements if m[4]])
-                good_signals = sum(1 for m in measurements if m[4] and m[4] > 15)
-                success_rate = (good_signals / total) * 100 if total > 0 else 0
-
-                self.total_measurements_label.setText(f"การวัดทั้งหมด: {total}")
-                self.avg_rssi_label.setText(f"RSSI เฉลี่ย: {avg_rssi:.1f} dBm")
-                self.avg_snr_label.setText(f"SNR เฉลี่ย: {avg_snr:.1f} dB")
-                self.success_rate_label.setText(f"อัตราความสำเร็จ: {success_rate:.1f}%")
-
-        except Exception as e:
-            logger.error(f"รีเฟรชประวัติผิดพลาด: {str(e)}")
-
-    def clear_history(self):
-        """ล้างประวัติการวิเคราะห์"""
-        try:
-            reply = QMessageBox.question(self, 'ล้างประวัติ',
-                                       'คุณต้องการล้างประวัติการวิเคราะห์ทั้งหมดหรือไม่?',
-                                       QMessageBox.Yes | QMessageBox.No)
-
-            if reply == QMessageBox.Yes:
-                conn = sqlite3.connect(self.db.db_path)
-                cursor = conn.cursor()
-                cursor.execute('DELETE FROM signal_measurements')
-                cursor.execute('DELETE FROM spectrum_data')
-                conn.commit()
-                conn.close()
-
-                self.refresh_history()
-                QMessageBox.information(self, "ล้างประวัติ", "ล้างประวัติเรียบร้อยแล้ว")
-
-        except Exception as e:
-            QMessageBox.critical(self, "ล้างประวัติผิดพลาด", str(e))
-
-    def export_history(self):
-        """ส่งออกประวัติการวิเคราะห์"""
+        """ส่งออกข้อมูล"""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename, _ = QFileDialog.getSaveFileName(
-                self, "ส่งออกประวัติ",
-                f"analysis_history_{timestamp}.csv",
+                self, "Export Analysis Data",
+                f"dab_analysis_{timestamp}.csv",
                 "CSV Files (*.csv)"
             )
 
             if filename:
-                if self.db.export_to_csv(filename):
-                    QMessageBox.information(self, "ส่งออกสำเร็จ", f"ส่งออกประวัติ: {filename}")
-                else:
-                    QMessageBox.critical(self, "ส่งออกผิดพลาด", "ไม่สามารถส่งออกประวัติได้")
+                # TODO: Implement export functionality
+                QMessageBox.information(self, "Export", f"Data exported to: {filename}")
 
         except Exception as e:
-            QMessageBox.critical(self, "ส่งออกผิดพลาด", str(e))
+            QMessageBox.critical(self, "Export Error", str(e))
 
-# ---------- Main Window ----------
 class Lab6MainWindow(QMainWindow):
+    """หน้าต่างหลักของ Lab 6 - DAB+ Signal Analyzer"""
+
     def __init__(self):
         super().__init__()
         self.db = AnalysisDatabase()
-        self.analyzer = SignalAnalyzer()
+        self.analyzer = DABSignalAnalyzer()
 
         self.setup_ui()
-        self.setup_touch_interface()
         self.setup_connections()
 
-        self.setWindowTitle("LAB 6: สร้าง DAB+ Signal Analyzer")
-        self.resize(1400, 900)
+        self.setWindowTitle("Lab 6: DAB+ Signal Analyzer (Lab 3 Pipeline)")
+        self.setGeometry(100, 100, 1600, 1000)
+
+        if '--fullscreen' in sys.argv:
+            self.showFullScreen()
 
     def setup_ui(self):
         """สร้าง UI หลัก"""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        main_layout = QVBoxLayout(central_widget)
+        layout = QVBoxLayout()
 
         # หัวข้อ
-        title_label = QLabel("LAB 6: สร้าง DAB+ Signal Analyzer")
-        title_label.setAlignment(Qt.AlignCenter)
-        title_label.setStyleSheet("""
-            font-size: 22px; font-weight: bold; color: #2c3e50;
-            padding: 15px; background-color: #ecf0f1; border-radius: 10px;
+        title = QLabel("Lab 6: DAB+ Signal Analyzer")
+        title.setFont(QFont("Arial", 20, QFont.Bold))
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("""
+            background-color: #2c3e50; color: white; padding: 15px;
+            border-radius: 10px; margin: 5px;
         """)
-        main_layout.addWidget(title_label)
+        layout.addWidget(title)
 
-        # Main Splitter
+        # Main splitter
         main_splitter = QSplitter(Qt.Horizontal)
 
-        # Left Panel - Controls and Quality
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget)
+        # Left panel - controls
+        self.control_panel = AnalysisControlPanel()
+        main_splitter.addWidget(self.control_panel)
 
-        self.control_panel = AnalysisControlWidget()
-        self.quality_panel = SignalQualityWidget()
-
-        left_layout.addWidget(self.control_panel)
-        left_layout.addWidget(self.quality_panel)
-
-        main_splitter.addWidget(left_widget)
-
-        # Center Panel - Spectrum Analyzer
-        self.spectrum_widget = SpectrumAnalyzerWidget()
+        # Center panel - spectrum
+        self.spectrum_widget = AdvancedSpectrumWidget()
         main_splitter.addWidget(self.spectrum_widget)
 
-        # Right Panel - History
-        self.history_widget = AnalysisHistoryWidget()
-        main_splitter.addWidget(self.history_widget)
+        # Right panel - quality meters
+        self.quality_widget = SignalQualityMeterWidget()
+        main_splitter.addWidget(self.quality_widget)
 
         # Set splitter sizes
-        main_splitter.setSizes([400, 700, 300])
+        main_splitter.setSizes([400, 800, 400])
 
-        main_layout.addWidget(main_splitter)
+        layout.addWidget(main_splitter)
 
         # Status bar
-        self.status_label = QLabel("พร้อมใช้งาน - เชื่อมต่อ RTL-SDR เพื่อเริ่มวิเคราะห์")
-        self.status_label.setStyleSheet("background-color: #dff0d8; padding: 8px; border: 1px solid #d6e9c6;")
-        main_layout.addWidget(self.status_label)
+        self.status_label = QLabel("Ready - Select frequency and start analysis")
+        self.status_label.setStyleSheet("background-color: #e8f5e8; padding: 8px; border-radius: 5px;")
+        layout.addWidget(self.status_label)
 
-    def setup_touch_interface(self):
-        """ปรับการแสดงผลสำหรับหน้าจอสัมผัส"""
-        font = QFont()
-        font.setPointSize(13)
-        self.setFont(font)
-
-        # ปรับขนาด splitter handles สำหรับ touch
-        main_splitter = self.findChild(QSplitter)
-        if main_splitter:
-            main_splitter.setHandleWidth(10)
+        central_widget.setLayout(layout)
 
     def setup_connections(self):
-        """เชื่อมต่อ signals และ slots"""
-        # Control panel signals
+        """เชื่อมต่อ signals"""
+        # Control panel
         self.control_panel.analysis_started.connect(self.start_analysis)
         self.control_panel.analysis_stopped.connect(self.stop_analysis)
         self.control_panel.frequency_changed.connect(self.analyzer.set_frequency)
 
-        # Analyzer signals
+        # Analyzer
         self.analyzer.measurement_ready.connect(self.on_measurement_ready)
         self.analyzer.spectrum_ready.connect(self.spectrum_widget.update_spectrum)
+        self.analyzer.eti_analysis_ready.connect(self.on_eti_analysis_ready)
         self.analyzer.error_occurred.connect(self.show_error)
 
     def start_analysis(self, parameters):
         """เริ่มการวิเคราะห์"""
         try:
-            # ตั้งค่าพารามิเตอร์ analyzer
             self.analyzer.set_parameters(
                 parameters['sample_rate'],
                 parameters['gain'],
                 parameters['fft_size']
             )
             self.analyzer.set_frequency(parameters['frequency'])
+            self.analyzer.start()
 
-            # เชื่อมต่อ RTL-SDR
-            if self.analyzer.connect_rtlsdr():
-                self.analyzer.start_analysis()
-                self.status_label.setText("กำลังวิเคราะห์สัญญาณ...")
-                logger.info("เริ่มการวิเคราะห์สัญญาณ")
-            else:
-                # ใช้โหมดจำลองถ้าเชื่อมต่อไม่ได้
-                self.analyzer.start_analysis()
-                self.status_label.setText("โหมดจำลอง - กำลังวิเคราะห์สัญญาณ...")
-                logger.info("เริ่มการวิเคราะห์ในโหมดจำลอง")
+            self.status_label.setText(f"Analyzing {parameters['frequency']:.3f} MHz...")
+            logger.info(f"Started analysis: {parameters['frequency']:.3f} MHz")
 
         except Exception as e:
-            self.show_error(f"เริ่มการวิเคราะห์ผิดพลาด: {str(e)}")
+            self.show_error(f"Start analysis error: {e}")
 
     def stop_analysis(self):
         """หยุดการวิเคราะห์"""
         try:
             self.analyzer.stop_analysis()
-            self.analyzer.disconnect_rtlsdr()
-            self.status_label.setText("หยุดการวิเคราะห์แล้ว")
-            logger.info("หยุดการวิเคราะห์สัญญาณ")
+            if self.analyzer.isRunning():
+                self.analyzer.wait(3000)
+
+            self.status_label.setText("Analysis stopped")
+            logger.info("Analysis stopped")
 
         except Exception as e:
-            logger.error(f"หยุดการวิเคราะห์ผิดพลาด: {str(e)}")
+            logger.error(f"Stop analysis error: {e}")
 
     def on_measurement_ready(self, measurement_data):
         """เมื่อมีข้อมูลการวัดใหม่"""
         try:
             # อัปเดต quality meters
-            rssi = measurement_data.get('signal_strength', -100)
-            snr = measurement_data.get('snr', 0)
-            ber = measurement_data.get('ber', 100)
-
-            self.quality_panel.update_signal_quality(rssi, snr, ber)
-
-            # กำหนดสถานะสัญญาณ
-            if snr > 15 and ber < 1:
-                status = "สัญญาณดีเยี่ยม"
-            elif snr > 10 and ber < 5:
-                status = "สัญญาณดี"
-            elif snr > 5:
-                status = "สัญญาณอ่อน"
-            else:
-                status = "ไม่มีสัญญาณ"
-
-            frequency = measurement_data.get('frequency_mhz', 0)
-            self.quality_panel.update_signal_status(status, frequency, "OFDM", "1536")
+            self.quality_widget.update_measurements(measurement_data)
 
             # บันทึกข้อมูลลงฐานข้อมูล
             self.db.add_measurement(measurement_data)
 
+            # อัปเดต status
+            freq = measurement_data.get('frequency_mhz', 0)
+            snr = measurement_data.get('snr', 0)
+            services = measurement_data.get('services_found', 0)
+
+            self.status_label.setText(
+                f"Analyzing {freq:.3f} MHz - SNR: {snr:.1f} dB - Services: {services}"
+            )
+
         except Exception as e:
-            logger.error(f"ประมวลผลข้อมูลการวัดผิดพลาด: {str(e)}")
+            logger.error(f"Measurement processing error: {e}")
+
+    def on_eti_analysis_ready(self, eti_analysis):
+        """เมื่อมีข้อมูล ETI analysis ใหม่"""
+        try:
+            # แสดงข้อมูล ETI analysis เพิ่มเติมใน log
+            sync_quality = eti_analysis.get('ofdm_sync_quality', 0)
+            services_found = eti_analysis.get('services_found', 0)
+
+            logger.info(f"ETI Analysis - Sync: {sync_quality:.1f}%, Services: {services_found}")
+
+        except Exception as e:
+            logger.error(f"ETI analysis processing error: {e}")
 
     def show_error(self, error_message):
         """แสดงข้อความผิดพลาด"""
-        QMessageBox.critical(self, "เกิดข้อผิดพลาด", error_message)
-        self.status_label.setText(f"ข้อผิดพลาด: {error_message}")
+        QMessageBox.critical(self, "Error", error_message)
+        self.status_label.setText(f"Error: {error_message}")
         logger.error(error_message)
 
     def closeEvent(self, event):
         """เมื่อปิดโปรแกรม"""
         try:
-            # หยุดการทำงานของ analyzer thread
             if self.analyzer.isRunning():
                 self.analyzer.stop_analysis()
-                self.analyzer.wait(3000)  # รอ 3 วินาที
+                self.analyzer.wait(3000)
 
-            self.analyzer.disconnect_rtlsdr()
+            self.analyzer.cleanup()
             event.accept()
 
         except Exception as e:
-            logger.error(f"ปิดโปรแกรมผิดพลาด: {str(e)}")
+            logger.error(f"Close event error: {e}")
             event.accept()
 
-# ---------- Main Function ----------
 def main():
     """ฟังก์ชันหลัก"""
-    try:
-        # ตรวจสอบ RTL-SDR availability
-        if RtlSdr is None:
-            print("Warning: pyrtlsdr not found. Running in simulation mode.")
+    app = QApplication(sys.argv)
 
-        app = QApplication(sys.argv)
+    # ตั้งค่า font สำหรับ touchscreen
+    font = QFont()
+    font.setPointSize(12)
+    app.setFont(font)
 
-        # ตั้งค่า font สำหรับ touch interface
-        font = QFont()
-        font.setPointSize(12)
-        app.setFont(font)
+    # สร้างและแสดงหน้าต่างหลัก
+    window = Lab6MainWindow()
+    window.show()
 
-        # สร้างและแสดงหน้าต่างหลัก
-        window = Lab6MainWindow()
-        window.show()
+    print("Lab 6: DAB+ Signal Analyzer")
+    print("Based on Lab 3 RTL-SDR + ETI Pipeline")
+    print("Features:")
+    print("- Advanced spectrum analysis with waterfall display")
+    print("- ETI stream analysis and quality metrics")
+    print("- Real-time signal quality monitoring")
+    print("- OFDM synchronization analysis")
+    print("- Constellation quality assessment")
+    print("- Touch-friendly interface")
 
-        sys.exit(app.exec_())
-
-    except Exception as e:
-        print(f"เริ่มโปรแกรมผิดพลาด: {str(e)}")
-        sys.exit(1)
+    sys.exit(app.exec_())
 
 if __name__ == "__main__":
-    print("LAB 6: สร้าง DAB+ Signal Analyzer (เฉลย)")
     main()

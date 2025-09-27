@@ -1,448 +1,318 @@
-# LAB 3: การควบคุม RTL-SDR โดยตรงด้วย pyrtlsdr
+# LAB 3: Learning DAB+ with Raspberry Pi and RTL-SDR
 
 ## วัตถุประสงค์
-- เข้าถึงและควบคุม RTL-SDR โดยตรงผ่าน Python
-- เรียนรู้การอ่านและประมวลผล IQ samples
-- สร้างเครื่องมือวิเคราะห์สเปกตรัมความถี่แบบ real-time
-- พัฒนา GUI สำหรับการควบคุมและแสดงผลด้วย matplotlib
+- เรียนรู้การรับสัญญาณ DAB+ ด้วย RTL-SDR
+- ทำความเข้าใจ I/Q data processing และ ETI stream format
+- พัฒนาแอปพลิเคชันสำหรับ decode และเล่น DAB+ services
+- สร้าง GUI application สำหรับควบคุมและแสดงผล
 
 ## ความรู้พื้นฐานที่ต้องมี
-- ความเข้าใจจาก Lab 1 และ Lab 2
-- ความรู้พื้นฐานเกี่ยวกับ DSP (Digital Signal Processing)
-- การใช้งาน NumPy และ matplotlib
-- ความเข้าใจเกี่ยวกับ FFT และ spectrum analysis
+- ความรู้พื้นฐาน Software Defined Radio (SDR)
+- การเขียนโปรแกรม Python
+- ความเข้าใจเกี่ยวกับ digital signal processing
+- การใช้งาน Linux command line
 
 ## อุปกรณ์ที่ใช้
-- **Raspberry Pi 4** พร้อม RTL-SDR V4 dongle
-- **หน้าจอสัมผัส HDMI 7"** สำหรับควบคุม
-- **เสาอากาศ wideband** สำหรับรับสัญญาณ
-- **การเชื่อมต่อเน็ต** สำหรับติดตั้ง packages
+- Raspberry Pi 4 (4GB RAM)
+- RTL-SDR Blog V4 dongle
+- หน้าจอสัมผัส HDMI 7"
+- หูฟัง 3.5mm
+- เสาอากาศสำหรับรับสัญญาณ DAB+
 
-## การเตรียมระบบ
+## การติดตั้ง Dependencies
 
-### คำสั่งติดตั้ง Dependencies:
-
+### Phase 1: RTL-SDR Data Acquisition
 ```bash
-# ติดตั้ง Python scientific packages
-sudo apt install -y python3-numpy python3-scipy python3-matplotlib
-sudo apt install -y python3-pyqt5 python3-pyqt5.qtwidgets
+# ติดตั้ง RTL-SDR drivers และ libraries
+sudo apt update
+sudo apt install -y rtl-sdr librtlsdr-dev
 
-# ติดตั้ง pyrtlsdr dependencies
-sudo apt install -y librtlsdr0 librtlsdr-dev
-sudo apt install -y python3-pip python3-dev
+# ติดตั้ง Python packages
+pip install pyrtlsdr numpy scipy matplotlib
 
-# ติดตั้ง pyrtlsdr
-pip3 install pyrtlsdr
+# ตั้งค่า udev rules สำหรับ RTL-SDR
+echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="2838", GROUP="adm", MODE="0666", SYMLINK+="rtl_sdr"' | sudo tee /etc/udev/rules.d/20.rtlsdr.rules
+sudo udevadm control --reload-rules
 
-# ติดตั้ง matplotlib backend สำหรับ PyQt5
-pip3 install matplotlib PyQt5
+# ทดสอบ RTL-SDR
+rtl_test -t
 ```
 
-### ตรวจสอบการติดตั้ง:
-
+### Phase 2: DAB+ Signal Processing
 ```bash
-# ทดสอบ pyrtlsdr
-python3 -c "from rtlsdr import RtlSdr; print('pyrtlsdr OK')"
+# ติดตั้ง dependencies สำหรับ eti-cmdline
+sudo apt install -y cmake build-essential libfftw3-dev librtlsdr-dev git
 
-# ทดสอบ RTL-SDR hardware
-rtl_test -t
+# ดาวน์โหลดและ compile eti-stuff
+git clone https://github.com/JvanKatwijk/eti-stuff
+cd eti-stuff
+mkdir build && cd build
+cmake .. -DRTLSDR=1
+make -j4
+sudo make install
+
+# ตรวจสอบการติดตั้ง
+eti-cmdline --help
+```
+
+### Phase 3: ETI Analysis
+```bash
+# ติดตั้ง Python packages สำหรับ parsing
+pip install bitstring
+```
+
+### Phase 4: Audio Playback
+```bash
+# ติดตั้ง audio dependencies
+sudo apt install -y ffmpeg alsa-utils pulseaudio
+pip install ffmpeg-python pyaudio pillow
+
+# ตั้งค่า audio output (3.5mm jack)
+sudo raspi-config nonint do_audio 1
+
+# ทดสอบ audio
+speaker-test -c2 -t wav
+```
+
+### Phase 5: GUI Application
+```bash
+# ติดตั้ง PyQt5 และ dependencies
+sudo apt install -y python3-pyqt5 python3-pyqt5-dev
+pip install PyQt5 pyqtgraph
+
+# ตั้งค่า touchscreen (สำหรับ 7" HDMI)
+sudo apt install -y xinput-calibrator
 ```
 
 ## ขั้นตอนการทำงาน
 
-### 1. ทำความเข้าใจ RTL-SDR โดยตรง
+### Phase 1: RTL-SDR Data Acquisition
 
-```python
-from rtlsdr import RtlSdr
+#### ขั้นตอนที่ 1.1: ทดสอบ RTL-SDR พื้นฐาน (lab3_1a.py)
+1. **เชื่อมต่อ RTL-SDR** กับ Raspberry Pi
+2. **ตั้งค่าความถี่** DAB+ Thailand (185.360 MHz)
+3. **รับ I/Q samples** และบันทึกเป็นไฟล์
+4. **วิเคราะห์สเปกตรัม** เบื้องต้น
 
-# เชื่อมต่อ RTL-SDR
-sdr = RtlSdr()
+#### ขั้นตอนที่ 1.2: RTL-TCP Client (lab3_1b.py)
+1. **เริ่มต้น rtl_tcp server**: `rtl_tcp -a localhost -p 1234`
+2. **เชื่อมต่อผ่าน TCP** และควบคุม RTL-SDR
+3. **รับ I/Q data** ผ่านเครือข่าย
+4. **เปรียบเทียบ** กับการเชื่อมต่อโดยตรง
 
-# ตั้งค่าพื้นฐาน
-sdr.sample_rate = 2.4e6    # 2.4 MHz
-sdr.center_freq = 100e6    # 100 MHz  
-sdr.gain = 'auto'
+### Phase 2: DAB+ Signal Processing
 
-# อ่าน samples (complex numbers)
-samples = sdr.read_samples(1024*1024)  # 1M samples
+#### ขั้นตอนที่ 2: ETI Stream Generation (lab3_2.py)
+1. **ใช้ eti-cmdline** แปลง I/Q เป็น ETI stream
+2. **ตั้งค่าความถี่** และพารามิเตอร์
+3. **ติดตามสถานะ** การ sync และ error rate
+4. **บันทึก ETI stream** สำหรับขั้นตอนถัดไป
 
-sdr.close()
-```
+### Phase 3: ETI Analysis
 
-### 2. เรียกใช้งาน Lab GUI
+#### ขั้นตอนที่ 3: Service Discovery (lab3_3.py)
+1. **Parse ETI frames** (6144 bytes แต่ละ frame)
+2. **แยก FIC data** (Fast Information Channel)
+3. **ค้นหา DAB+ services** และ subchannels
+4. **สร้างรายการ services** และบันทึกเป็น JSON
 
-```bash
-cd Labs/Lab3
-python3 lab3.py
-```
+### Phase 4: Audio Playback
+
+#### ขั้นตอนที่ 4: Service Player (lab3_4.py)
+1. **เลือก service** จากรายการ
+2. **แยกเสียง AAC** จาก ETI stream
+3. **เล่นเสียงผ่าน 3.5mm jack**
+4. **แสดง Dynamic Label** และ MOT slideshow
+
+### Phase 5: Complete GUI
+
+#### ขั้นตอนที่ 5: GUI Application (lab3_5.py)
+1. **สร้าง main window** ด้วย PyQt5
+2. **แสดงรายการ services** แบบ touch-friendly
+3. **ควบคุมการเล่นเสียง** และปรับระดับเสียง
+4. **แสดง spectrum analyzer** และ signal quality
+5. **แสดง slideshow** และ real-time information
 
 ## การเขียนโค้ด
 
-### ส่วนที่ต้องเติมใน `lab3.py`:
+### ส่วนที่ต้องเติมใน lab3_1a.py:
+- `setup_rtlsdr()`: เชื่อมต่อและตั้งค่า RTL-SDR
+- `capture_samples()`: รับ I/Q samples และบันทึกไฟล์
+- `analyze_spectrum()`: วิเคราะห์สเปกตรัม FFT
 
-#### 1. RTLSDRController - การควบคุมโดยตรง:
+### ส่วนที่ต้องเติมใน lab3_1b.py:
+- `connect()`: เชื่อมต่อ TCP กับ rtl_tcp server
+- `set_frequency()`, `set_sample_rate()`, `set_gain()`: ส่งคำสั่งควบคุม
+- `receive_samples()`: รับ I/Q data ผ่าน network
 
-```python
-from rtlsdr import RtlSdr
-import numpy as np
+### ส่วนที่ต้องเติมใน lab3_2.py:
+- `check_eti_cmdline()`: ตรวจสอบการติดตั้ง eti-cmdline
+- `run_eti_cmdline()`: เรียกใช้และติดตาม eti-cmdline process
+- `analyze_eti_output()`: วิเคราะห์ไฟล์ ETI ที่ได้
 
-class RTLSDRController(QThread):
-    spectrum_data = pyqtSignal(np.ndarray, np.ndarray)  # freq, power
-    signal_info = pyqtSignal(dict)
-    error_occurred = pyqtSignal(str)
-    
-    def connect_rtlsdr(self):
-        try:
-            self.sdr = RtlSdr()
-            
-            # ตั้งค่าเริ่มต้น
-            self.sdr.sample_rate = self.sample_rate
-            self.sdr.center_freq = self.center_freq
-            self.sdr.gain = self.gain
-            
-            # ตรวจสอบการเชื่อมต่อ
-            test_samples = self.sdr.read_samples(1024)
-            if len(test_samples) > 0:
-                return True
-            else:
-                return False
-                
-        except Exception as e:
-            self.error_occurred.emit(f"เชื่อมต่อ RTL-SDR ไม่ได้: {str(e)}")
-            return False
-            
-    def read_samples(self, num_samples=1024*1024):
-        try:
-            if self.sdr:
-                return self.sdr.read_samples(num_samples)
-            return None
-        except Exception as e:
-            self.error_occurred.emit(f"อ่าน samples ไม่ได้: {str(e)}")
-            return None
-```
+### ส่วนที่ต้องเติมใน lab3_3.py:
+- `parse_eti_header()`: แยก ETI frame header
+- `extract_fic_data()`: แยก Fast Information Channel
+- `parse_service_information()`: แยกข้อมูล services และ subchannels
 
-#### 2. การคำนวณสเปกตรัม:
+### ส่วนที่ต้องเติมใน lab3_4.py:
+- `load_service_list()`: โหลดรายการ services จาก JSON
+- `extract_audio_data()`: แยกเสียง AAC จาก ETI
+- `play_audio()`: เล่นเสียงผ่าน PyAudio
+- `extract_slideshow_images()`: แยก MOT slideshow
 
-```python
-def calculate_spectrum(self, samples):
-    try:
-        # คำนวณ FFT
-        fft_data = np.fft.fft(samples)
-        fft_shifted = np.fft.fftshift(fft_data)
-        
-        # คำนวณ power spectrum (dB)
-        power = 20 * np.log10(np.abs(fft_shifted) + 1e-10)
-        
-        # คำนวณ frequencies
-        frequencies = np.fft.fftfreq(len(samples), 1/self.sample_rate)
-        frequencies = np.fft.fftshift(frequencies) + self.center_freq
-        
-        return frequencies, power
-        
-    except Exception as e:
-        self.error_occurred.emit(f"คำนวณสเปกตรัม error: {str(e)}")
-        return None, None
-```
-
-#### 3. SpectrumAnalyzer - การแสดงกราฟ:
-
-```python
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
-
-class SpectrumAnalyzer(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setup_matplotlib()
-        self.setup_ui()
-        
-    def setup_matplotlib(self):
-        # สร้าง matplotlib figure
-        self.figure = Figure(figsize=(10, 6))
-        self.canvas = FigureCanvas(self.figure)
-        self.ax = self.figure.add_subplot(111)
-        
-        # ตั้งค่าแกน
-        self.ax.set_xlabel('Frequency (MHz)')
-        self.ax.set_ylabel('Power (dB)')
-        self.ax.set_title('RF Spectrum Analyzer')
-        self.ax.grid(True, alpha=0.3)
-        
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        
-        # เพิ่ม matplotlib canvas
-        layout.addWidget(self.canvas)
-        
-        # ปุ่มควบคุม
-        control_layout = QHBoxLayout()
-        self.save_btn = QPushButton(" บันทึกกราฟ")
-        self.clear_btn = QPushButton(" เคลียร์")
-        self.freeze_btn = QPushButton("️ หยุดชั่วคราว")
-        
-        control_layout.addWidget(self.save_btn)
-        control_layout.addWidget(self.clear_btn)
-        control_layout.addWidget(self.freeze_btn)
-        layout.addLayout(control_layout)
-        
-    def update_spectrum(self, frequencies, power):
-        try:
-            # เคลียร์กราฟเก่า
-            self.ax.clear()
-            
-            # วาดกราฟใหม่
-            self.ax.plot(frequencies / 1e6, power, 'b-', linewidth=0.8)
-            
-            # ตั้งค่าแกน
-            self.ax.set_xlabel('Frequency (MHz)')
-            self.ax.set_ylabel('Power (dB)')
-            self.ax.set_title('RF Spectrum - Real Time')
-            self.ax.grid(True, alpha=0.3)
-            
-            # อัพเดท canvas
-            self.canvas.draw()
-            
-        except Exception as e:
-            logger.error(f"อัพเดทกราฟ error: {str(e)}")
-```
-
-#### 4. RTLSDRControlPanel - การควบคุมพารามิเตอร์:
-
-```python
-class RTLSDRControlPanel(QWidget):
-    frequency_changed = pyqtSignal(float)
-    sample_rate_changed = pyqtSignal(float)
-    gain_changed = pyqtSignal(str)
-    
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        
-        # Frequency control
-        freq_group = QGroupBox("ความถี่กลาง (MHz)")
-        freq_layout = QVBoxLayout(freq_group)
-        
-        self.freq_slider = QSlider(Qt.Horizontal)
-        self.freq_slider.setRange(24, 1700)  # 24-1700 MHz
-        self.freq_slider.setValue(100)       # 100 MHz
-        
-        self.freq_spinbox = QSpinBox()
-        self.freq_spinbox.setRange(24, 1700)
-        self.freq_spinbox.setValue(100)
-        self.freq_spinbox.setSuffix(" MHz")
-        
-        freq_layout.addWidget(self.freq_slider)
-        freq_layout.addWidget(self.freq_spinbox)
-        layout.addWidget(freq_group)
-        
-        # Sample rate control
-        sr_group = QGroupBox("Sample Rate")
-        sr_layout = QVBoxLayout(sr_group)
-        
-        self.sr_combo = QComboBox()
-        self.sr_combo.addItems([
-            "0.25 MHz", "0.5 MHz", "1.0 MHz", 
-            "1.2 MHz", "2.0 MHz", "2.4 MHz"
-        ])
-        self.sr_combo.setCurrentText("2.4 MHz")
-        
-        sr_layout.addWidget(self.sr_combo)
-        layout.addWidget(sr_group)
-        
-        # Gain control
-        gain_group = QGroupBox("Gain")
-        gain_layout = QVBoxLayout(gain_group)
-        
-        self.gain_combo = QComboBox()
-        self.gain_combo.addItems([
-            "auto", "0 dB", "9 dB", "14 dB", "27 dB", 
-            "37 dB", "77 dB", "87 dB", "125 dB", 
-            "144 dB", "157 dB", "166 dB", "197 dB"
-        ])
-        
-        gain_layout.addWidget(self.gain_combo)
-        layout.addWidget(gain_group)
-        
-        # เชื่อม signals
-        self.freq_slider.valueChanged.connect(self.on_freq_changed)
-        self.freq_spinbox.valueChanged.connect(self.on_freq_changed)
-        self.sr_combo.currentTextChanged.connect(self.on_sr_changed)
-        self.gain_combo.currentTextChanged.connect(self.gain_changed.emit)
-        
-    def on_freq_changed(self, value):
-        # sync slider และ spinbox
-        if self.sender() == self.freq_slider:
-            self.freq_spinbox.setValue(value)
-        else:
-            self.freq_slider.setValue(value)
-            
-        self.frequency_changed.emit(value * 1e6)  # convert to Hz
-        
-    def on_sr_changed(self, text):
-        # แปลง text เป็น sample rate
-        sr_map = {
-            "0.25 MHz": 0.25e6, "0.5 MHz": 0.5e6, "1.0 MHz": 1.0e6,
-            "1.2 MHz": 1.2e6, "2.0 MHz": 2.0e6, "2.4 MHz": 2.4e6
-        }
-        self.sample_rate_changed.emit(sr_map.get(text, 2.4e6))
-```
-
-### คำแนะนำการเขียน:
-
-1. **ใช้ numpy** สำหรับการประมวลผลสัญญาณ
-2. **ใช้ matplotlib** สำหรับแสดงกราฟแบบ real-time
-3. **ใช้ QThread** เพื่อไม่ให้ GUI ค้าง
-4. **จัดการ memory** เพื่อไม่ให้ระบบหน่วง
+### ส่วนที่ต้องเติมใน lab3_5.py:
+- `setup_ui()`: สร้าง GUI หลักด้วย PyQt5
+- `DABSignalThread.run()`: ประมวลผลสัญญาณใน background
+- `SpectrumWidget`: แสดง spectrum analyzer
+- `ServiceListWidget`: แสดงรายการ services
+- `AudioControlWidget`: ควบคุมการเล่นเสียง
 
 ## ผลลัพธ์ที่คาดหวัง
 
-### 1. GUI Application ที่สมบูรณ์:
-- หน้าต่างแบ่งเป็น 3 ส่วน: controls, spectrum, analysis
-- การควบคุมความถี่และพารามิเตอร์แบบ real-time
-- กราฟสเปกตรัมที่อัพเดทต่อเนื่อง
-- การแสดงข้อมูลการวิเคราะห์สัญญาณ
+### Phase 1:
+- ไฟล์ `raw_iq_data.bin` และ `networked_iq_data.bin`
+- กราฟสเปกตรัมความถี่
+- ข้อมูล signal strength และ quality
 
-### 2. การทำงานของระบบ:
-```
- เชื่อมต่อ RTL-SDR สำเร็จ
- Tuner: Rafael Micro R820T2
- ตั้งค่า: 100 MHz, 2.4 MHz, auto gain
+### Phase 2:
+- ไฟล์ `dab_ensemble.eti` ขนาดประมาณ 6144 * จำนวน frames
+- สถานะ sync และ error rate จาก eti-cmdline
+- ETI frames ที่สามารถ parse ได้
 
- เริ่มการวิเคราะห์สเปกตรัม...
- พบสัญญาณที่ 88.5 MHz (-45 dBm) - FM Radio
- พบสัญญาณที่  174.9 MHz (-52 dBm) - DAB+
- พบสัญญาณที่ 462.7 MHz (-38 dBm) - PMR
+### Phase 3:
+- ไฟล์ `service_list.json` และ `subchannel_info.json`
+- รายการ DAB+ services ที่พบ
+- ข้อมูล bitrate และ codec type ของแต่ละ service
 
- SNR: 15.2 dB
- Peak count: 12 signals
- บันทึกข้อมูลแล้ว: spectrum_100MHz_20241208.csv
-```
+### Phase 4:
+- ไฟล์ `decoded_audio.wav`
+- โฟลเดอร์ `slideshow_images/` พร้อมภาพ
+- การเล่นเสียงผ่าน 3.5mm jack
+- แสดง Dynamic Label Segment (DLS)
 
-### 3. ไฟล์ที่สร้างขึ้น:
-- `spectrum_data_*.csv`: ข้อมูลสเปกตรัม
-- `spectrum_plot_*.png`: กราฟที่บันทึก
-- `signal_analysis_*.json`: ผลการวิเคราะห์
-
-## 🎯 Trap Exercises
-
-### Trap 3.1: IQ Data Processing Challenge
-**เป้าหมาย**: เข้าใจการประมวลผล IQ samples และ complex signal processing
-
-**โจทย์**:
-1. รับ IQ samples จาก RTL-SDR และวิเคราะห์ลักษณะของข้อมูล
-2. คำนวณ magnitude และ phase จาก complex samples
-3. ใช้ windowing functions (Hanning, Hamming, Blackman) เพื่อลด spectral leakage
-4. เปรียบเทียบผลต่างของ window functions ต่อคุณภาพ spectrum
-
-**Hints**:
-- IQ data เป็น complex numbers: `samples = I + jQ`
-- Magnitude: `|samples|`, Phase: `∠samples`
-- Window functions ช่วยลด side lobes ใน FFT
-- ใช้ `scipy.signal.windows` สำหรับ window functions
-
-### Trap 3.2: Real-time Spectrum Analysis Optimization
-**เป้าหมาย**: สร้าง spectrum analyzer ที่มีประสิทธิภาพสูง
-
-**โจทย์**:
-1. ออกแบบ circular buffer สำหรับเก็บ samples แบบ real-time
-2. ใช้ overlap-add method เพื่อให้ spectrum smooth
-3. ใช้ threading เพื่อแยก data acquisition และ GUI update
-4. Implement peak detection และ signal classification
-
-**Hints**:
-- Circular buffer ช่วยประหยัด memory
-- Overlap 50% ทำให้ spectrum เรียบขึ้น
-- ใช้ QTimer สำหรับ GUI updates
-- Peak detection: ใช้ `scipy.signal.find_peaks`
-
-### Trap 3.3: Advanced Signal Analysis
-**เป้าหมาย**: วิเคราะห์สัญญาณในหลายมิติ
-
-**โจทย์**:
-1. สร้าง waterfall display (time vs frequency vs power)
-2. Implement bandpass filtering สำหรับสัญญาณเฉพาะ
-3. คำนวณ SFDR (Spurious Free Dynamic Range)
-4. สร้าง automatic gain control (AGC) algorithm
-
-**Hints**:
-- Waterfall: ใช้ 2D array เก็บ spectrum history
-- Bandpass filter: ใช้ `scipy.signal.butter`
-- SFDR = ความต่างระหว่าง signal กับ spurious สูงสุด
-- AGC: ปรับ gain ตาม signal level โดยอัตโนมัติ
-
-### Trap 3.4: GUI Performance และ Threading
-**เป้าหมาย**: สร้าง responsive GUI สำหรับการประมวลผล real-time
-
-**โจทย์**:
-1. ใช้ QThread สำหรับ RTL-SDR data acquisition
-2. Implement thread-safe communication ระหว่าง worker และ GUI
-3. สร้าง progress indicators และ status monitoring
-4. Handle thread cleanup เมื่อปิดโปรแกรม
-
-**Hints**:
-- ใช้ pyqtSignal สำหรับ thread communication
-- QMutex สำหรับ thread-safe data sharing
-- QProgressBar แสดง processing status
-- Always cleanup threads ใน closeEvent()
+### Phase 5:
+- GUI application ที่ทำงานบน 7" touchscreen
+- Real-time spectrum analyzer
+- Touch-friendly service selection
+- Audio player controls
+- Slideshow viewer
+- Signal quality indicators
 
 ## การแก้ไขปัญหา
 
-### ปัญหา 1: pyrtlsdr import ไม่ได้
-
-**วิธีแก้**:
+### ปัญหา RTL-SDR ไม่ work:
 ```bash
-# ติดตั้งใหม่
-sudo apt remove python3-rtlsdr
-pip3 uninstall pyrtlsdr
-pip3 install pyrtlsdr
+# ตรวจสอบ USB connection
+lsusb | grep Realtek
 
-# ตรวจสอบ
-python3 -c "from rtlsdr import RtlSdr; print('OK')"
+# ตรวจสอบ driver conflict
+sudo rmmod dvb_usb_rtl28xxu rtl2832 rtl2830
+
+# รีสตาร์ท udev rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
 ```
 
-### ปัญหา 2: matplotlib ช้าบนหน้าจอสัมผัส
+### ปัญหา eti-cmdline build failures:
+```bash
+# ติดตั้ง missing dependencies
+sudo apt install -y libfftw3-dev libsndfile1-dev pkg-config
 
-**วิธีแก้**:
-```python
-# ลดการอัพเดทกราฟ
-self.update_timer.setInterval(200)  # 5 FPS แทน 30 FPS
+# ใช้ cmake version ใหม่
+sudo apt install -y cmake
 
-# ใช้ blit สำหรับการวาดที่เร็วขึ้น
-self.line, = self.ax.plot([], [])
-self.line.set_data(frequencies, power)
-self.canvas.draw_idle()
+# ตรวจสอบ compiler
+gcc --version
 ```
 
-### ปัญหา 3: Memory leak
+### ปัญหา Audio dropouts:
+```bash
+# ปรับ CPU performance
+echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 
-**วิธีแก้**:
-```python
-def calculate_spectrum(self, samples):
-    # จำกัดขนาด samples
-    if len(samples) > 1024*1024:
-        samples = samples[:1024*1024]
-    
-    # ใช้ in-place operations
-    np.fft.fft(samples, overwrite_x=True)
-    
-    # ล้าง memory
-    del samples
+# เพิ่ม audio buffer
+echo 'snd-usb-audio index=0' | sudo tee -a /etc/modprobe.d/alsa-base.conf
+
+# ตรวจสอบ audio devices
+aplay -l
+```
+
+### ปัญหา GUI performance:
+```bash
+# เพิ่ม GPU memory
+echo 'gpu_mem=128' | sudo tee -a /boot/config.txt
+
+# ปิด unnecessary services
+sudo systemctl disable bluetooth
+sudo systemctl disable wifi-powersave@wlan0.service
+
+# ตั้งค่า Qt scaling
+export QT_SCALE_FACTOR=1.2
+```
+
+### ปัญหา Touchscreen calibration:
+```bash
+# Calibrate touchscreen
+sudo apt install xinput-calibrator
+xinput_calibrator
+
+# ตั้งค่า rotation หากจำเป็น
+echo 'display_rotate=2' | sudo tee -a /boot/config.txt
 ```
 
 ## คำถามทบทวน
 
-1. **IQ samples คืออะไร?**
-   - ตอบ: Complex numbers แทน amplitude และ phase ของสัญญาณ
+1. **I/Q Data Processing**: อธิบายความแตกต่างระหว่างการรับข้อมูลจาก pyrtlsdr และ rtl_tcp client
+2. **ETI Stream Format**: ETI frame มีขนาดกี่ bytes และแต่ละ frame มี logical time เท่าไหร่?
+3. **DAB+ vs DAB**: ความแตกต่างหลักระหว่าง DAB และ DAB+ คืออะไร?
+4. **Signal Quality**: ปัจจัยใดบ้างที่ส่งผลต่อคุณภาพสัญญาณ DAB+?
+5. **Audio Codec**: DAB+ ใช้ audio codec อะไร และมี bitrate เท่าไหร่?
+6. **MOT Slideshow**: MOT ย่อมาจากอะไร และมีวัตถุประสงค์อย่างไร?
+7. **FIC vs MSC**: อธิบายหน้าที่ของ Fast Information Channel และ Main Service Channel
+8. **GUI Design**: ออกแบบ GUI ให้เหมาะกับ touchscreen ต้องคำนึงถึงอะไรบ้าง?
 
-2. **FFT ใช้ทำอะไรใน spectrum analysis?**
-   - ตอบ: แปลงสัญญาณจาก time domain เป็น frequency domain
+## ข้อมูลเพิ่มเติม
 
-3. **ทำไมต้องใช้ fftshift?**
-   - ตอบ: เพื่อจัดเรียงความถี่ให้ถูกต้อง (negative ไปซ้าย, positive ไปขวา)
+### DAB+ Frequencies ในประเทศไทย:
+- **Bangkok/Central**: 185.360 MHz (Block 7A)
+- **Phuket/South**: 185.360 MHz (Block 7A)
+- **Chiang Mai/North**: 195.936 MHz (Block 8C)
 
-4. **Sample rate มีผลต่ออะไร?**
-   - ตอบ: ช่วงความถี่ที่วิเคราะห์ได้และความละเอียดของสเปกตรัม
+### ETI Frame Structure:
+```
+ETI Frame (6144 bytes total):
+├── ERR (4 bytes) - Error information
+├── FSYNC (3 bytes) - Frame synchronization
+├── LIDATA (1 byte) - Length indicator
+├── FC (4 bytes) - Frame characterization
+├── NST (1 byte) - Number of streams
+├── FIC (32 bytes × 3) - Fast Information Channel
+└── MSC (remaining bytes) - Main Service Channel
+```
 
----
+### Performance Optimization สำหรับ Pi 4:
+```bash
+# CPU Performance Mode
+echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 
-**หมายเหตุ**: Lab นี้ต้องการความรู้ DSP พื้นฐาน สำหรับการทำความเข้าใจการทำงานของ RTL-SDR ระดับต่ำ
+# GPU Memory สำหรับ GUI
+echo 'gpu_mem=128' >> /boot/config.txt
+
+# USB Buffer สำหรับ RTL-SDR
+echo 'usbcore.usbfs_memory_mb=1000' >> /boot/cmdline.txt
+
+# Network Buffer
+echo 'net.core.rmem_max = 134217728' >> /etc/sysctl.conf
+echo 'net.core.rmem_default = 134217728' >> /etc/sysctl.conf
+```
+
+### การเชื่อมต่อ Hardware:
+```
+RTL-SDR V4 → USB 3.0 → Raspberry Pi 4
+           ↓
+      DAB+ Antenna (VHF Band III: 174-240 MHz)
+
+Pi 4 → HDMI → 7" Touchscreen (800×480)
+     → 3.5mm → Headphones/Speaker
+```

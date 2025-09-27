@@ -1,0 +1,1242 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="1400"
+   height="680"
+   viewBox="0 0 1400 680"
+   version="1.1"
+   id="svg4385"
+   sodipodi:docname="Lab3_Technical_Architecture.svg"
+   inkscape:version="1.2.2 (b0a8486541, 2022-12-01)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview4387"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     showgrid="false"
+     inkscape:zoom="0.878"
+     inkscape:cx="289.29385"
+     inkscape:cy="431.66287"
+     inkscape:window-width="2560"
+     inkscape:window-height="1016"
+     inkscape:window-x="0"
+     inkscape:window-y="336"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg4385" />
+  <defs
+     id="defs3969">
+    <style
+       id="style3958">
+      .main-title { font-family: Arial, sans-serif; font-size: 22px; font-weight: bold; fill: #2c3e50; }
+      .section-title { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; fill: #34495e; }
+      .subsection-title { font-family: Arial, sans-serif; font-size: 14px; font-weight: bold; fill: #7f8c8d; }
+      .tech-text { font-family: Arial, sans-serif; font-size: 10px; fill: #2c3e50; }
+      .code-text { font-family: monospace; font-size: 9px; fill: #27ae60; }
+      .signal-flow { stroke: #3498db; stroke-width: 3; fill: none; marker-end: url(#bluearrow); }
+      .data-flow { stroke: #e74c3c; stroke-width: 2; fill: none; marker-end: url(#redarrow); }
+      .process-flow { stroke: #f39c12; stroke-width: 2; fill: none; marker-end: url(#orangearrow); }
+      .hardware-box { fill: #3498db; stroke: #2980b9; stroke-width: 2; opacity: 0.8; }
+      .software-box { fill: #2ecc71; stroke: #27ae60; stroke-width: 2; opacity: 0.8; }
+      .data-box { fill: #f1c40f; stroke: #f4d03f; stroke-width: 2; opacity: 0.8; }
+      .output-box { fill: #9b59b6; stroke: #8e44ad; stroke-width: 2; opacity: 0.8; }
+      .rf-signal { fill: #e74c3c; stroke: #c0392b; stroke-width: 2; opacity: 0.9; }
+    </style>
+    <marker
+       id="bluearrow"
+       markerWidth="10"
+       markerHeight="7"
+       refX="10"
+       refY="3.5"
+       orient="auto">
+      <polygon
+         points="0,0 10,3.5 0,7 "
+         fill="#3498db"
+         id="polygon3960" />
+    </marker>
+    <marker
+       id="redarrow"
+       markerWidth="10"
+       markerHeight="7"
+       refX="10"
+       refY="3.5"
+       orient="auto">
+      <polygon
+         points="0,0 10,3.5 0,7 "
+         fill="#e74c3c"
+         id="polygon3963" />
+    </marker>
+    <marker
+       id="orangearrow"
+       markerWidth="10"
+       markerHeight="7"
+       refX="10"
+       refY="3.5"
+       orient="auto">
+      <polygon
+         points="0,7 0,0 10,3.5 "
+         fill="#f39c12"
+         id="polygon3966" />
+    </marker>
+  </defs>
+  <circle
+     cx="250"
+     cy="88"
+     r="25"
+     class="hardware-box"
+     id="circle3985" />
+  <path
+     d="M 200,88 H 320"
+     class="signal-flow"
+     id="path4295" />
+  <!-- Background -->
+  <!-- Main Title -->
+  <!-- RF Signal Source -->
+  <rect
+     x="50"
+     y="48"
+     width="150"
+     height="80"
+     class="rf-signal"
+     rx="8"
+     id="rect3975"
+     inkscape:export-filename="lab3-phase1.png"
+     inkscape:export-xdpi="96"
+     inkscape:export-ydpi="96"
+     ry="8"
+     style="fill:#ee7d71;fill-opacity:1" />
+  <text
+     x="125"
+     y="73"
+     text-anchor="middle"
+     class="section-title"
+     fill="white"
+     id="text3977">DAB+ Transmitter</text>
+  <text
+     x="60"
+     y="93"
+     class="tech-text"
+     fill="white"
+     id="text3979">Thailand 6C</text>
+  <text
+     x="60"
+     y="108"
+     class="tech-text"
+     fill="white"
+     id="text3981">185.360 MHz</text>
+  <text
+     x="60"
+     y="123"
+     class="tech-text"
+     fill="white"
+     id="text3983">10kW ERP</text>
+  <!-- Antenna & RF -->
+  <text
+     x="250"
+     y="90.167831"
+     text-anchor="middle"
+     class="tech-text"
+     fill="white"
+     id="text3987">Antenna</text>
+  <!-- RTL-SDR Hardware -->
+  <rect
+     x="320"
+     y="48"
+     width="180"
+     height="80"
+     class="hardware-box"
+     rx="8"
+     id="rect3989"
+     ry="8"
+     style="fill:#53a8e1;fill-opacity:1" />
+  <text
+     x="410"
+     y="68"
+     text-anchor="middle"
+     class="section-title"
+     fill="white"
+     id="text3991">RTL-SDR Blog V4</text>
+  <text
+     x="330"
+     y="88"
+     class="tech-text"
+     fill="white"
+     id="text3993">R828D Tuner</text>
+  <text
+     x="330"
+     y="103"
+     class="tech-text"
+     fill="white"
+     id="text3995">RTL2832U ADC</text>
+  <text
+     x="330"
+     y="118"
+     class="tech-text"
+     fill="white"
+     id="text3997">1PPM TCXO</text>
+  <text
+     x="430"
+     y="88"
+     class="tech-text"
+     fill="white"
+     id="text3999">2.4 MSPS</text>
+  <text
+     x="430"
+     y="103"
+     class="tech-text"
+     fill="white"
+     id="text4001">8-bit I/Q</text>
+  <text
+     x="430"
+     y="118"
+     class="tech-text"
+     fill="white"
+     id="text4003">USB 2.0</text>
+  <!-- Phase 1: I/Q Data Acquisition -->
+  <rect
+     x="50"
+     y="178"
+     width="300"
+     height="120"
+     class="software-box"
+     rx="8"
+     id="rect4005"
+     ry="8"
+     style="fill:#5edb94;fill-opacity:1" />
+  <text
+     x="200"
+     y="198"
+     text-anchor="middle"
+     class="section-title"
+     fill="white"
+     id="text4007">Phase 1: I/Q Data Acquisition</text>
+  <!-- lab3_1a.py -->
+  <rect
+     x="70"
+     y="218"
+     width="120"
+     height="70"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4009"
+     ry="4" />
+  <text
+     x="130"
+     y="233"
+     text-anchor="middle"
+     class="code-text"
+     id="text4011">lab3_1a.py</text>
+  <text
+     x="75"
+     y="248"
+     class="tech-text"
+     id="text4013">pyrtlsdr.RtlSdr()</text>
+  <text
+     x="75"
+     y="263"
+     class="tech-text"
+     id="text4015">set_freq(185360000)</text>
+  <text
+     x="75"
+     y="278"
+     class="tech-text"
+     id="text4017">read_samples()</text>
+  <!-- lab3_1b.py -->
+  <rect
+     x="210"
+     y="218"
+     width="120"
+     height="70"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4019"
+     ry="4" />
+  <text
+     x="270"
+     y="233"
+     text-anchor="middle"
+     class="code-text"
+     id="text4021">lab3_1b.py</text>
+  <text
+     x="215"
+     y="248"
+     class="tech-text"
+     id="text4023">socket.connect()</text>
+  <text
+     x="215"
+     y="263"
+     class="tech-text"
+     id="text4025">rtl_tcp protocol</text>
+  <text
+     x="215"
+     y="278"
+     class="tech-text"
+     id="text4027">network I/Q stream</text>
+  <!-- Phase 1 Data Output -->
+  <rect
+     x="380"
+     y="178"
+     width="140"
+     height="120"
+     class="data-box"
+     rx="8"
+     id="rect4029"
+     ry="8" />
+  <text
+     x="450"
+     y="198"
+     text-anchor="middle"
+     class="section-title"
+     id="text4031">I/Q Data Files</text>
+  <text
+     x="390"
+     y="218"
+     class="tech-text"
+     id="text4033">Format: Complex64</text>
+  <text
+     x="390"
+     y="233"
+     class="tech-text"
+     id="text4035">Rate: 2.048 MHz</text>
+  <text
+     x="390"
+     y="248"
+     class="tech-text"
+     id="text4037">Size: ~16 MB/sec</text>
+  <text
+     x="390"
+     y="263"
+     class="code-text"
+     id="text4039">raw_iq_data.bin</text>
+  <text
+     x="390"
+     y="278"
+     class="code-text"
+     id="text4041">network_iq_data.bin</text>
+  <!-- Phase 2: ETI Processing -->
+  <rect
+     x="50"
+     y="338"
+     width="470"
+     height="140"
+     class="software-box"
+     rx="8"
+     id="rect4043"
+     inkscape:export-filename="phase2.png"
+     inkscape:export-xdpi="96"
+     inkscape:export-ydpi="96"
+     ry="8"
+     style="fill:#5edb94;fill-opacity:1" />
+  <text
+     x="285"
+     y="358"
+     text-anchor="middle"
+     class="section-title"
+     fill="white"
+     id="text4045">Phase 2: DAB+ Signal Processing (eti-cmdline)</text>
+  <!-- OFDM Processing -->
+  <rect
+     x="70"
+     y="378"
+     width="100"
+     height="80"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4047"
+     ry="4" />
+  <text
+     x="120"
+     y="393"
+     text-anchor="middle"
+     class="subsection-title"
+     id="text4049">OFDM</text>
+  <text
+     x="75"
+     y="408"
+     class="tech-text"
+     id="text4051">FFT 2048</text>
+  <text
+     x="75"
+     y="423"
+     class="tech-text"
+     id="text4053">1536 carriers</text>
+  <text
+     x="75"
+     y="438"
+     class="tech-text"
+     id="text4055">QPSK demod</text>
+  <text
+     x="75"
+     y="453"
+     class="tech-text"
+     id="text4057">Guard removal</text>
+  <!-- FIC Processing -->
+  <rect
+     x="190"
+     y="378"
+     width="100"
+     height="80"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4059"
+     ry="4" />
+  <text
+     x="240"
+     y="393"
+     text-anchor="middle"
+     class="subsection-title"
+     id="text4061">FIC Decode</text>
+  <text
+     x="195"
+     y="408"
+     class="tech-text"
+     id="text4063">Convolutional</text>
+  <text
+     x="195"
+     y="423"
+     class="tech-text"
+     id="text4065">Viterbi decode</text>
+  <text
+     x="195"
+     y="438"
+     class="tech-text"
+     id="text4067">Service info</text>
+  <text
+     x="195"
+     y="453"
+     class="tech-text"
+     id="text4069">Ensemble data</text>
+  <!-- MSC Processing -->
+  <rect
+     x="310"
+     y="378"
+     width="100"
+     height="80"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4071"
+     ry="4" />
+  <text
+     x="360"
+     y="393"
+     text-anchor="middle"
+     class="subsection-title"
+     id="text4073">MSC Extract</text>
+  <text
+     x="315"
+     y="408"
+     class="tech-text"
+     id="text4075">Subchannel</text>
+  <text
+     x="315"
+     y="423"
+     class="tech-text"
+     id="text4077">demultiplex</text>
+  <text
+     x="315"
+     y="438"
+     class="tech-text"
+     id="text4079">Error correct</text>
+  <text
+     x="315"
+     y="453"
+     class="tech-text"
+     id="text4081">Reed-Solomon</text>
+  <!-- ETI Generation -->
+  <rect
+     x="430"
+     y="378"
+     width="80"
+     height="80"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4083"
+     ry="4" />
+  <text
+     x="470"
+     y="393"
+     text-anchor="middle"
+     class="subsection-title"
+     id="text4085">ETI Gen</text>
+  <text
+     x="435"
+     y="408"
+     class="tech-text"
+     id="text4087">Frame sync</text>
+  <text
+     x="435"
+     y="423"
+     class="tech-text"
+     id="text4089">6144 bytes</text>
+  <text
+     x="435"
+     y="438"
+     class="tech-text"
+     id="text4091">24ms frame</text>
+  <text
+     x="435"
+     y="453"
+     class="tech-text"
+     id="text4093">ETI-NI format</text>
+  <!-- ETI Stream Output -->
+  <rect
+     x="560"
+     y="338"
+     width="140"
+     height="140"
+     class="data-box"
+     rx="8"
+     id="rect4095"
+     ry="8" />
+  <text
+     x="630"
+     y="358"
+     text-anchor="middle"
+     class="section-title"
+     id="text4097">ETI Stream</text>
+  <text
+     x="570"
+     y="378"
+     class="tech-text"
+     id="text4099">ETSI EN 300 799</text>
+  <text
+     x="570"
+     y="393"
+     class="tech-text"
+     id="text4101">Frame size: 6144 B</text>
+  <text
+     x="570"
+     y="408"
+     class="tech-text"
+     id="text4103">Duration: 24 ms</text>
+  <text
+     x="570"
+     y="423"
+     class="tech-text"
+     id="text4105">Bitrate: 2.048 Mbps</text>
+  <text
+     x="570"
+     y="438"
+     class="code-text"
+     id="text4107">dab_ensemble.eti</text>
+  <text
+     x="570"
+     y="458"
+     class="tech-text"
+     id="text4109">Continuous stream</text>
+  <!-- Phase 3: ETI Analysis -->
+  <rect
+     x="50"
+     y="518"
+     width="300"
+     height="120"
+     class="software-box"
+     rx="8"
+     id="rect4111"
+     inkscape:export-filename="phase3.png"
+     inkscape:export-xdpi="96"
+     inkscape:export-ydpi="96"
+     ry="8"
+     style="fill:#5edb94;fill-opacity:1" />
+  <text
+     x="200"
+     y="538"
+     text-anchor="middle"
+     class="section-title"
+     fill="white"
+     id="text4113">Phase 3: ETI Analysis Parsing</text>
+  <rect
+     x="70"
+     y="558"
+     width="120"
+     height="70"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4115"
+     ry="4" />
+  <text
+     x="130"
+     y="573"
+     text-anchor="middle"
+     class="code-text"
+     id="text4117">lab3_3.py</text>
+  <text
+     x="75"
+     y="588"
+     class="tech-text"
+     id="text4119">ETI frame parser</text>
+  <text
+     x="75"
+     y="603"
+     class="tech-text"
+     id="text4121">FIC interpreter</text>
+  <text
+     x="75"
+     y="618"
+     class="tech-text"
+     id="text4123">Service scanner</text>
+  <rect
+     x="210"
+     y="558"
+     width="120"
+     height="70"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4125"
+     ry="4" />
+  <text
+     x="270"
+     y="573"
+     text-anchor="middle"
+     class="subsection-title"
+     id="text4127">Service Data</text>
+  <text
+     x="215"
+     y="588"
+     class="tech-text"
+     id="text4129">Station names</text>
+  <text
+     x="215"
+     y="603"
+     class="tech-text"
+     id="text4131">Bitrates</text>
+  <text
+     x="215"
+     y="618"
+     class="tech-text"
+     id="text4133">Codec info</text>
+  <!-- Service Metadata -->
+  <rect
+     x="380"
+     y="518"
+     width="140"
+     height="120"
+     class="data-box"
+     rx="8"
+     id="rect4135"
+     ry="8" />
+  <text
+     x="450"
+     y="538"
+     text-anchor="middle"
+     class="section-title"
+     id="text4137">Service Metadata</text>
+  <text
+     x="390"
+     y="558"
+     class="code-text"
+     id="text4139">service_list.json</text>
+  <text
+     x="390"
+     y="573"
+     class="code-text"
+     id="text4141">subchannel_info.json</text>
+  <text
+     x="390"
+     y="593"
+     class="tech-text"
+     id="text4143">Service IDs</text>
+  <text
+     x="390"
+     y="608"
+     class="tech-text"
+     id="text4145">Component info</text>
+  <text
+     x="390"
+     y="623"
+     class="tech-text"
+     id="text4147">Programme data</text>
+  <!-- Phase 4: Audio & Data Services -->
+  <rect
+     x="750"
+     y="178"
+     width="400"
+     height="200"
+     class="software-box"
+     rx="8"
+     id="rect4149"
+     inkscape:export-filename="phase4.png"
+     inkscape:export-xdpi="96"
+     inkscape:export-ydpi="96"
+     ry="8"
+     style="fill:#5edb94;fill-opacity:1" />
+  <text
+     x="950"
+     y="198"
+     text-anchor="middle"
+     class="section-title"
+     fill="white"
+     id="text4151">Phase 4: Audio Data Services Processing</text>
+  <!-- AAC Decoder -->
+  <rect
+     x="770"
+     y="218"
+     width="110"
+     height="70"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4153"
+     ry="4" />
+  <text
+     x="825"
+     y="233"
+     text-anchor="middle"
+     class="subsection-title"
+     id="text4155">AAC Decoder</text>
+  <text
+     x="775"
+     y="248"
+     class="tech-text"
+     id="text4157">ffmpeg-python</text>
+  <text
+     x="775"
+     y="263"
+     class="tech-text"
+     id="text4159">HE-AAC v2</text>
+  <text
+     x="775"
+     y="278"
+     class="tech-text"
+     id="text4161">44.1 kHz PCM</text>
+  <!-- Audio Output -->
+  <rect
+     x="900"
+     y="218"
+     width="110"
+     height="70"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4163"
+     ry="4" />
+  <text
+     x="955"
+     y="233"
+     text-anchor="middle"
+     class="subsection-title"
+     id="text4165">Audio Output</text>
+  <text
+     x="905"
+     y="248"
+     class="tech-text"
+     id="text4167">PyAudio</text>
+  <text
+     x="905"
+     y="263"
+     class="tech-text"
+     id="text4169">ALSA backend</text>
+  <text
+     x="905"
+     y="278"
+     class="tech-text"
+     id="text4171">3.5mm jack</text>
+  <!-- Data Services -->
+  <rect
+     x="1030"
+     y="218"
+     width="110"
+     height="70"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4173"
+     ry="4" />
+  <text
+     x="1085"
+     y="233"
+     text-anchor="middle"
+     class="subsection-title"
+     id="text4175">Data Services</text>
+  <text
+     x="1035"
+     y="248"
+     class="tech-text"
+     id="text4177">MOT Slideshow</text>
+  <text
+     x="1035"
+     y="263"
+     class="tech-text"
+     id="text4179">Dynamic Label</text>
+  <text
+     x="1035"
+     y="278"
+     class="tech-text"
+     id="text4181">PIL/Pillow</text>
+  <!-- DLS Processing -->
+  <rect
+     x="770"
+     y="298"
+     width="110"
+     height="70"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4183"
+     ry="4" />
+  <text
+     x="825"
+     y="313"
+     text-anchor="middle"
+     class="subsection-title"
+     id="text4185">DLS Decode</text>
+  <text
+     x="775"
+     y="328"
+     class="tech-text"
+     id="text4187">X-PAD extract</text>
+  <text
+     x="775"
+     y="343"
+     class="tech-text"
+     id="text4189">Text segments</text>
+  <text
+     x="775"
+     y="358"
+     class="tech-text"
+     id="text4191">UTF-8 decode</text>
+  <!-- MOT Processing -->
+  <rect
+     x="900"
+     y="298"
+     width="110"
+     height="70"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4193"
+     ry="4" />
+  <text
+     x="955"
+     y="313"
+     text-anchor="middle"
+     class="subsection-title"
+     id="text4195">MOT Decode</text>
+  <text
+     x="905"
+     y="328"
+     class="tech-text"
+     id="text4197">Object assembly</text>
+  <text
+     x="905"
+     y="343"
+     class="tech-text"
+     id="text4199">JPEG images</text>
+  <text
+     x="905"
+     y="358"
+     class="tech-text"
+     id="text4201">Slideshow sync</text>
+  <!-- Content Storage -->
+  <rect
+     x="1030"
+     y="298"
+     width="110"
+     height="70"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4203"
+     ry="4" />
+  <text
+     x="1085"
+     y="313"
+     text-anchor="middle"
+     class="subsection-title"
+     id="text4205">Content Store</text>
+  <text
+     x="1035"
+     y="328"
+     class="tech-text"
+     id="text4207">Image cache</text>
+  <text
+     x="1035"
+     y="343"
+     class="tech-text"
+     id="text4209">Text buffer</text>
+  <text
+     x="1035"
+     y="358"
+     class="tech-text"
+     id="text4211">Metadata</text>
+  <!-- Phase 4 Output -->
+  <rect
+     x="1190"
+     y="178"
+     width="150"
+     height="200"
+     class="output-box"
+     rx="8"
+     id="rect4213"
+     ry="8" />
+  <text
+     x="1265"
+     y="198"
+     text-anchor="middle"
+     class="section-title"
+     fill="white"
+     id="text4215">Media Output</text>
+  <text
+     x="1200"
+     y="223"
+     class="code-text"
+     fill="white"
+     id="text4217"
+     style="fill:#1a1a1a">decoded_audio.wav</text>
+  <text
+     x="1200"
+     y="238"
+     class="code-text"
+     fill="white"
+     id="text4219"
+     style="fill:#1a1a1a">slideshow_images/</text>
+  <text
+     x="1200"
+     y="258"
+     class="tech-text"
+     fill="white"
+     id="text4221">Real-time audio</text>
+  <text
+     x="1200"
+     y="273"
+     class="tech-text"
+     fill="white"
+     id="text4223">Station metadata</text>
+  <text
+     x="1200"
+     y="288"
+     class="tech-text"
+     fill="white"
+     id="text4225">Song titles</text>
+  <text
+     x="1200"
+     y="303"
+     class="tech-text"
+     fill="white"
+     id="text4227">Artist info</text>
+  <text
+     x="1200"
+     y="318"
+     class="tech-text"
+     fill="white"
+     id="text4229">Programme data</text>
+  <text
+     x="1200"
+     y="338"
+     class="tech-text"
+     fill="white"
+     id="text4231">Synchronized</text>
+  <text
+     x="1200"
+     y="353"
+     class="tech-text"
+     fill="white"
+     id="text4233">slideshow</text>
+  <!-- Phase 5: GUI Application -->
+  <rect
+     x="750"
+     y="418"
+     width="590"
+     height="160"
+     class="software-box"
+     rx="8"
+     id="rect4235"
+     inkscape:export-filename="phase5.png"
+     inkscape:export-xdpi="96"
+     inkscape:export-ydpi="96"
+     ry="8"
+     style="fill:#5edb94;fill-opacity:1" />
+  <text
+     x="1045"
+     y="438"
+     text-anchor="middle"
+     class="section-title"
+     fill="white"
+     id="text4237">Phase 5: Complete GUI Application (PyQt5)</text>
+  <!-- Station List -->
+  <rect
+     x="770"
+     y="458"
+     width="110"
+     height="70"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4239"
+     ry="4" />
+  <text
+     x="825"
+     y="473"
+     text-anchor="middle"
+     class="subsection-title"
+     id="text4241">Station List</text>
+  <text
+     x="775"
+     y="488"
+     class="tech-text"
+     id="text4243">QListWidget</text>
+  <text
+     x="775"
+     y="503"
+     class="tech-text"
+     id="text4245">Signal strength</text>
+  <text
+     x="775"
+     y="518"
+     class="tech-text"
+     id="text4247">Touch selection</text>
+  <!-- Audio Controls -->
+  <rect
+     x="900"
+     y="458"
+     width="110"
+     height="70"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4249"
+     ry="4" />
+  <text
+     x="955"
+     y="473"
+     text-anchor="middle"
+     class="subsection-title"
+     id="text4251">Audio Controls</text>
+  <text
+     x="905"
+     y="488"
+     class="tech-text"
+     id="text4253">Play/Stop</text>
+  <text
+     x="905"
+     y="503"
+     class="tech-text"
+     id="text4255">Volume slider</text>
+  <text
+     x="905"
+     y="518"
+     class="tech-text"
+     id="text4257">QAudioOutput</text>
+  <!-- Spectrum Display -->
+  <rect
+     x="1030"
+     y="458"
+     width="110"
+     height="70"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4259"
+     ry="4" />
+  <text
+     x="1085"
+     y="473"
+     text-anchor="middle"
+     class="subsection-title"
+     id="text4261">Spectrum</text>
+  <text
+     x="1035"
+     y="488"
+     class="tech-text"
+     id="text4263">pyqtgraph</text>
+  <text
+     x="1035"
+     y="503"
+     class="tech-text"
+     id="text4265">FFT waterfall</text>
+  <text
+     x="1035"
+     y="518"
+     class="tech-text"
+     id="text4267">Signal quality</text>
+  <!-- Slideshow Viewer -->
+  <rect
+     x="1160"
+     y="458"
+     width="110"
+     height="70"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4269"
+     ry="4" />
+  <text
+     x="1215"
+     y="473"
+     text-anchor="middle"
+     class="subsection-title"
+     id="text4271">Slideshow</text>
+  <text
+     x="1165"
+     y="488"
+     class="tech-text"
+     id="text4273">QLabel image</text>
+  <text
+     x="1165"
+     y="503"
+     class="tech-text"
+     id="text4275">Auto advance</text>
+  <text
+     x="1165"
+     y="518"
+     class="tech-text"
+     id="text4277">Touch gestures</text>
+  <!-- Settings Panel -->
+  <rect
+     x="770"
+     y="538"
+     width="110"
+     height="30"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4279"
+     ry="4" />
+  <text
+     x="825"
+     y="553"
+     text-anchor="middle"
+     class="tech-text"
+     id="text4281">Settings Panel</text>
+  <!-- Now Playing -->
+  <rect
+     x="900"
+     y="538"
+     width="110"
+     height="30"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4283"
+     ry="4" />
+  <text
+     x="955"
+     y="553"
+     text-anchor="middle"
+     class="tech-text"
+     id="text4285">Now Playing Display</text>
+  <!-- Signal Quality -->
+  <rect
+     x="1030"
+     y="538"
+     width="110"
+     height="30"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4287"
+     ry="4" />
+  <text
+     x="1085"
+     y="553"
+     text-anchor="middle"
+     class="tech-text"
+     id="text4289">Signal Quality Meter</text>
+  <!-- Touch Interface -->
+  <rect
+     x="1160"
+     y="538"
+     width="110"
+     height="30"
+     fill="#ffffff"
+     stroke="#27ae60"
+     stroke-width="1"
+     rx="4"
+     id="rect4291"
+     ry="4" />
+  <text
+     x="1215"
+     y="553"
+     text-anchor="middle"
+     class="tech-text"
+     id="text4293">Touch Events Handler</text>
+  <!-- Signal Flow Arrows -->
+  <!-- RF to RTL-SDR -->
+  <!-- RTL-SDR to Phase 1 -->
+  <path
+     d="m 410,128 v 20 H 200 v 30"
+     class="signal-flow"
+     id="path4299" />
+  <!-- Phase 1 to I/Q Data -->
+  <path
+     d="m 350,238 h 30"
+     class="data-flow"
+     id="path4301" />
+  <!-- I/Q Data to Phase 2 -->
+  <path
+     d="m 450,298 v 20 H 285 v 20"
+     class="data-flow"
+     id="path4303" />
+  <!-- Phase 2 to ETI -->
+  <path
+     d="m 520,408 h 40"
+     class="data-flow"
+     id="path4305" />
+  <!-- ETI to Phase 3 -->
+  <path
+     d="m 630,478 v 20 H 200 v 20"
+     class="data-flow"
+     id="path4307" />
+  <!-- Phase 3 to Metadata -->
+  <path
+     d="m 350,578 h 30"
+     class="data-flow"
+     id="path4309" />
+  <!-- Phase 2 ETI to Phase 4 -->
+  <path
+     d="M 630,338 V 158 h 320 v 20"
+     class="process-flow"
+     id="path4311" />
+  <!-- Phase 3 Metadata to Phase 4 -->
+  <path
+     d="M 520,578 H 730 V 278 h 40"
+     class="process-flow"
+     id="path4313" />
+  <!-- Phase 4 to Output -->
+  <path
+     d="m 1150,278 h 40"
+     class="data-flow"
+     id="path4315" />
+  <!-- Phase 4 to Phase 5 -->
+  <path
+     d="m 950,378 v 40"
+     class="process-flow"
+     id="path4317" />
+  <!-- Performance & Resource Usage -->
+  <!-- Technical Standards -->
+</svg>

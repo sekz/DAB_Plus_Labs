@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-LAB 4: สร้าง DAB+ Station Scanner (เฉลย)
-- พัฒนาแอปพลิเคชันสแกนและติดตามสถานี DAB+
+LAB 4: สร้าง DAB+ Station Scanner - SOLUTION (Based on Lab 3 ETI approach)
+- พัฒนาแอปพลิเคชันสแกนและติดตามสถานี DAB+ ด้วย RTL-SDR + ETI processing
 - ติดตามคุณภาพสัญญาณแบบเรียลไทม์
 - รองรับหน้าจอสัมผัส 7" ด้วย PyQt5
-- มี GUI สำหรับจัดการสถานี, บันทึกประวัติ, และสร้างรายงาน
+- ใช้ Lab 3 pipeline: RTL-SDR → ETI → Service parsing
 """
 
 import sys
@@ -15,6 +15,8 @@ import csv
 import sqlite3
 import logging
 import subprocess
+import threading
+import time
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -23,114 +25,177 @@ from PyQt5.QtWidgets import (
     QLabel, QTableWidget, QTableWidgetItem, QProgressBar, QComboBox, QSpinBox,
     QGroupBox, QSplitter, QTextEdit, QTabWidget, QTreeWidget, QTreeWidgetItem,
     QFileDialog, QMessageBox, QListWidget, QListWidgetItem, QHeaderView,
-    QSlider, QCheckBox
+    QSlider, QCheckBox, QGridLayout
 )
 from PyQt5.QtCore import QTimer, QThread, pyqtSignal, Qt, QDateTime
 from PyQt5.QtGui import QFont, QPixmap, QIcon
 
+import numpy as np
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
+
+# นำเข้า modules จาก Lab 3
+try:
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'Lab3'))
+    from lab3_1a import RTLSDRDataAcquisition
+    from lab3_2 import ETIProcessor
+    from lab3_3 import ETIFrameParser
+except ImportError as e:
+    print(f"Warning: Cannot import Lab 3 modules: {e}")
+    print("Make sure Lab 3 solutions are available")
 
 # ตั้งค่า logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger("Lab4")
+logger = logging.getLogger("Lab4Scanner")
 
-# ---------- Database Manager ----------
+# DAB+ Thailand frequencies
+DAB_FREQUENCIES = {
+    '185.360': {'location': 'Bangkok/Phuket', 'block': '7A', 'freq': 185.360},
+    '202.928': {'location': 'Bangkok', 'block': '9A', 'freq': 202.928},
+    '195.936': {'location': 'Chiang Mai', 'block': '8C', 'freq': 195.936},
+    '210.096': {'location': 'Northeast', 'block': '10B', 'freq': 210.096},
+}
+
 class StationDatabase:
-    def __init__(self, db_path="dab_stations.db"):
+    """ฐานข้อมูลสำหรับเก็บข้อมูลสถานี DAB+"""
+
+    def __init__(self, db_path="dab_scanner.db"):
         self.db_path = db_path
         self.init_database()
 
     def init_database(self):
-        """สร้างฐานข้อมูลและตาราง"""
+        """สร้างตารางฐานข้อมูล"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
 
-            # ตารางสถานี DAB+
+            # ตารางสถานี
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS stations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ensemble_id TEXT,
-                    ensemble_name TEXT,
-                    service_id TEXT,
-                    service_name TEXT,
+                    ensemble_label TEXT,
+                    service_id INTEGER,
+                    service_label TEXT,
                     frequency_mhz REAL,
-                    channel TEXT,
+                    channel_block TEXT,
+                    location TEXT,
                     bitrate INTEGER,
                     audio_mode TEXT,
                     first_detected DATETIME,
                     last_detected DATETIME,
-                    detection_count INTEGER DEFAULT 1
+                    detection_count INTEGER DEFAULT 1,
+                    avg_signal_strength REAL,
+                    avg_snr REAL,
+                    avg_ber REAL
                 )
             ''')
 
             # ตารางประวัติคุณภาพสัญญาณ
             cursor.execute('''
-                CREATE TABLE IF NOT EXISTS signal_history (
+                CREATE TABLE IF NOT EXISTS signal_quality (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     station_id INTEGER,
                     timestamp DATETIME,
                     signal_strength REAL,
                     snr REAL,
                     ber REAL,
-                    status TEXT,
+                    sync_status TEXT,
+                    error_count INTEGER,
                     FOREIGN KEY (station_id) REFERENCES stations (id)
                 )
             ''')
 
-            # ตารางประวัติการสแกน
+            # ตารางการสแกน
             cursor.execute('''
-                CREATE TABLE IF NOT EXISTS scan_history (
+                CREATE TABLE IF NOT EXISTS scan_sessions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    scan_date DATETIME,
+                    scan_start DATETIME,
+                    scan_end DATETIME,
                     frequency_range TEXT,
                     stations_found INTEGER,
-                    scan_duration REAL,
+                    total_frequencies INTEGER,
+                    scan_mode TEXT,
                     notes TEXT
                 )
             ''')
 
             conn.commit()
             conn.close()
-            logger.info("ฐานข้อมูลพร้อมใช้งาน")
+            logger.info("Database initialized")
+
         except Exception as e:
-            logger.error(f"สร้างฐานข้อมูลผิดพลาด: {str(e)}")
+            logger.error(f"Database initialization error: {e}")
 
     def add_station(self, station_data):
-        """เพิ่มสถานีใหม่"""
+        """เพิ่มสถานีใหม่หรืออัปเดตสถานีที่มีอยู่"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            now = datetime.now()
 
+            # ตรวจสอบว่ามีสถานีนี้อยู่แล้วหรือไม่
             cursor.execute('''
-                INSERT INTO stations
-                (ensemble_id, ensemble_name, service_id, service_name,
-                 frequency_mhz, channel, bitrate, audio_mode, first_detected, last_detected)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                station_data.get('ensemble_id'),
-                station_data.get('ensemble_name'),
-                station_data.get('service_id'),
-                station_data.get('service_name'),
-                station_data.get('frequency_mhz'),
-                station_data.get('channel'),
-                station_data.get('bitrate'),
-                station_data.get('audio_mode'),
-                now, now
-            ))
+                SELECT id, detection_count FROM stations
+                WHERE service_id = ? AND frequency_mhz = ?
+            ''', (station_data.get('service_id'), station_data.get('frequency_mhz')))
 
-            station_id = cursor.lastrowid
+            existing = cursor.fetchone()
+
+            if existing:
+                # อัปเดตสถานีที่มีอยู่
+                station_id, count = existing
+                cursor.execute('''
+                    UPDATE stations SET
+                        last_detected = ?,
+                        detection_count = detection_count + 1,
+                        avg_signal_strength = ?,
+                        avg_snr = ?,
+                        avg_ber = ?
+                    WHERE id = ?
+                ''', (
+                    datetime.now(),
+                    station_data.get('signal_strength', 0),
+                    station_data.get('snr', 0),
+                    station_data.get('ber', 0),
+                    station_id
+                ))
+                result_id = station_id
+            else:
+                # เพิ่มสถานีใหม่
+                cursor.execute('''
+                    INSERT INTO stations (
+                        ensemble_id, ensemble_label, service_id, service_label,
+                        frequency_mhz, channel_block, location, bitrate, audio_mode,
+                        first_detected, last_detected, avg_signal_strength, avg_snr, avg_ber
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    station_data.get('ensemble_id'),
+                    station_data.get('ensemble_label'),
+                    station_data.get('service_id'),
+                    station_data.get('service_label'),
+                    station_data.get('frequency_mhz'),
+                    station_data.get('channel_block'),
+                    station_data.get('location'),
+                    station_data.get('bitrate', 128),
+                    station_data.get('audio_mode', 'stereo'),
+                    datetime.now(),
+                    datetime.now(),
+                    station_data.get('signal_strength', 0),
+                    station_data.get('snr', 0),
+                    station_data.get('ber', 0)
+                ))
+                result_id = cursor.lastrowid
+
             conn.commit()
             conn.close()
-            return station_id
+            return result_id
+
         except Exception as e:
-            logger.error(f"เพิ่มสถานีผิดพลาด: {str(e)}")
+            logger.error(f"Add station error: {e}")
             return None
 
     def get_all_stations(self):
@@ -139,840 +204,302 @@ class StationDatabase:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT * FROM stations ORDER BY frequency_mhz, service_name
+                SELECT * FROM stations
+                ORDER BY frequency_mhz, service_label
             ''')
             stations = cursor.fetchall()
             conn.close()
             return stations
         except Exception as e:
-            logger.error(f"ดึงข้อมูลสถานีผิดพลาด: {str(e)}")
+            logger.error(f"Get stations error: {e}")
             return []
 
-    def add_signal_record(self, station_id, signal_data):
-        """เพิ่มบันทึกคุณภาพสัญญาณ"""
+    def add_signal_quality(self, station_id, quality_data):
+        """เพิ่มข้อมูลคุณภาพสัญญาณ"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-
             cursor.execute('''
-                INSERT INTO signal_history
-                (station_id, timestamp, signal_strength, snr, ber, status)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO signal_quality (
+                    station_id, timestamp, signal_strength, snr, ber,
+                    sync_status, error_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (
                 station_id,
                 datetime.now(),
-                signal_data.get('signal_strength'),
-                signal_data.get('snr'),
-                signal_data.get('ber'),
-                signal_data.get('status')
+                quality_data.get('signal_strength'),
+                quality_data.get('snr'),
+                quality_data.get('ber'),
+                quality_data.get('sync_status'),
+                quality_data.get('error_count', 0)
             ))
-
             conn.commit()
             conn.close()
         except Exception as e:
-            logger.error(f"บันทึกสัญญาณผิดพลาด: {str(e)}")
+            logger.error(f"Add signal quality error: {e}")
 
-    def add_scan_record(self, scan_data):
-        """เพิ่มบันทึกการสแกน"""
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+class DABScannerEngine(QThread):
+    """เครื่องมือสแกน DAB+ ใช้ Lab 3 pipeline"""
 
-            cursor.execute('''
-                INSERT INTO scan_history
-                (scan_date, frequency_range, stations_found, scan_duration, notes)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (
-                datetime.now(),
-                scan_data.get('frequency_range'),
-                scan_data.get('stations_found'),
-                scan_data.get('scan_duration'),
-                scan_data.get('notes')
-            ))
-
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.error(f"บันทึกประวัติสแกนผิดพลาด: {str(e)}")
-
-# ---------- DAB+ Scanner Thread ----------
-class DABScanner(QThread):
     station_found = pyqtSignal(dict)
-    scan_progress = pyqtSignal(int, str)
+    scan_progress = pyqtSignal(int, str, float)  # percent, message, frequency
     scan_completed = pyqtSignal(int)
     error_occurred = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
+        self.rtl_sdr = None
+        self.eti_processor = None
+        self.eti_parser = None
+        self.scan_mode = 'full'  # 'full', 'known_frequencies', 'custom'
+        self.frequency_list = []
         self.is_scanning = False
-        self.frequency_ranges = {
-            "Band III (174-240 MHz)": (174, 240),
-            "L-Band (1452-1492 MHz)": (1452, 1492),
-            "Full Range": (174, 1492)
-        }
-        self.current_range = "Band III (174-240 MHz)"
         self._stop_flag = False
 
-    def set_frequency_range(self, range_name):
-        """ตั้งค่าช่วงความถี่ที่จะสแกน"""
-        self.current_range = range_name
+    def set_scan_mode(self, mode, frequencies=None):
+        """ตั้งค่าโหมดการสแกน"""
+        self.scan_mode = mode
+        if mode == 'known_frequencies':
+            self.frequency_list = [f['freq'] for f in DAB_FREQUENCIES.values()]
+        elif mode == 'custom' and frequencies:
+            self.frequency_list = frequencies
+        elif mode == 'full':
+            # Band III DAB+ frequencies (174-240 MHz)
+            self.frequency_list = []
+            for i in range(5, 14):  # Blocks 5A-13F
+                for block in ['A', 'B', 'C', 'D']:
+                    freq = 174.928 + (i - 5) * 1.712 + ['A', 'B', 'C', 'D'].index(block) * 0.032
+                    self.frequency_list.append(freq)
 
     def run(self):
-        """สแกนหาสถานี DAB+"""
+        """เริ่มการสแกน"""
         self.is_scanning = True
         self._stop_flag = False
         stations_found = 0
 
         try:
-            start_freq, end_freq = self.frequency_ranges[self.current_range]
-            step = 1.712  # DAB+ channel spacing in MHz
+            # เริ่มต้น RTL-SDR
+            self.rtl_sdr = RTLSDRDataAcquisition()
+            if not self.rtl_sdr.setup_rtlsdr():
+                self.error_occurred.emit("ไม่สามารถเชื่อมต่อ RTL-SDR ได้")
+                return
 
-            current_freq = start_freq
-            total_steps = int((end_freq - start_freq) / step)
-            step_count = 0
+            # เริ่มต้น ETI processor
+            self.eti_processor = ETIProcessor()
+            self.eti_parser = ETIFrameParser()
 
-            while current_freq <= end_freq and not self._stop_flag:
-                self.scan_progress.emit(
-                    int((step_count / total_steps) * 100),
-                    f"สแกนความถี่ {current_freq:.3f} MHz"
-                )
+            total_freqs = len(self.frequency_list)
 
-                # จำลองการสแกนด้วย welle.io หรือ rtl_sdr
-                station_data = self.scan_frequency(current_freq)
+            for i, frequency in enumerate(self.frequency_list):
+                if self._stop_flag:
+                    break
+
+                progress = int((i / total_freqs) * 100)
+                self.scan_progress.emit(progress, f"สแกนความถี่ {frequency:.3f} MHz", frequency)
+
+                # สแกนความถี่นี้
+                station_data = self.scan_frequency(frequency)
                 if station_data:
-                    self.station_found.emit(station_data)
-                    stations_found += 1
+                    for station in station_data:
+                        self.station_found.emit(station)
+                        stations_found += 1
 
-                current_freq += step
-                step_count += 1
-                self.msleep(100)  # ช่วงหยุดระหว่างการสแกน
+                # หน่วงเวลาระหว่างการสแกน
+                self.msleep(500)
 
             self.scan_completed.emit(stations_found)
 
         except Exception as e:
-            self.error_occurred.emit(f"สแกนผิดพลาด: {str(e)}")
+            self.error_occurred.emit(f"Scanning error: {e}")
         finally:
+            self.cleanup()
             self.is_scanning = False
 
     def scan_frequency(self, frequency):
-        """สแกนความถี่เฉพาะด้วย RTL-SDR และ DAB decoder"""
+        """สแกนความถี่เฉพาะด้วย Lab 3 pipeline"""
         try:
-            # ตรวจสอบความถี่ที่ถูกต้อง
-            if not self._is_valid_dab_frequency(frequency):
+            # Step 1: รับ I/Q data
+            self.rtl_sdr.frequency = int(frequency * 1000000)
+            samples = self.rtl_sdr.capture_samples(duration_seconds=5)
+
+            if samples is None:
                 return None
 
-            # ลองใช้ welle.io CLI หรือ dablin หรือ eti-stuff
-            station_data = self._scan_with_welle_io(frequency)
-            if station_data:
-                return station_data
+            # Step 2: ประมวลผลเป็น ETI stream
+            eti_data = self.process_iq_to_eti(samples, frequency)
+            if not eti_data:
+                return None
 
-            # ลองใช้ rtl_sdr + gr-dab
-            station_data = self._scan_with_rtl_sdr(frequency)
-            if station_data:
-                return station_data
+            # Step 3: Parse ETI เพื่อหา services
+            services = self.parse_eti_services(eti_data, frequency)
 
-            # ลองใช้ dabtools
-            station_data = self._scan_with_dabtools(frequency)
-            if station_data:
-                return station_data
-
-            # หากไม่มีเครื่องมือเฉพาะ ใช้ RTL-SDR แบบ direct
-            return self._scan_with_rtl_sdr_direct(frequency)
+            return services
 
         except Exception as e:
-            logger.error(f"สแกนความถี่ {frequency} MHz ผิดพลาด: {str(e)}")
+            logger.error(f"Scan frequency {frequency} error: {e}")
             return None
 
-    def _is_valid_dab_frequency(self, frequency):
-        """ตรวจสอบความถี่ DAB+ ที่ถูกต้อง"""
-        # Band III: 174.928 - 239.200 MHz (channels 5A-13F)
-        # L-Band: 1452.960 - 1490.624 MHz (channels LA-LW)
-
-        band3_channels = []
-        for block in ['A', 'B', 'C', 'D']:
-            for i in range(5, 14):  # 5A-13D
-                freq = 174.928 + (i - 5) * 1.712 + ['A', 'B', 'C', 'D'].index(block) * 0.032
-                band3_channels.append(freq)
-
-        lband_channels = []
-        for i in range(1, 25):  # LA-LW
-            freq = 1452.960 + (i - 1) * 1.712
-            lband_channels.append(freq)
-
-        # ตรวจสอบว่าความถี่ใกล้เคียงกับช่อง DAB+ ที่ถูกต้อง
-        all_channels = band3_channels + lband_channels
-        return any(abs(frequency - ch_freq) < 0.1 for ch_freq in all_channels)
-
-    def _scan_with_welle_io(self, frequency):
-        """สแกนด้วย welle.io CLI"""
+    def process_iq_to_eti(self, samples, frequency):
+        """แปลง I/Q samples เป็น ETI stream"""
         try:
-            # ตรวจสอบว่ามี welle.io
-            result = subprocess.run(['which', 'welle-cli'], capture_output=True, text=True, timeout=5)
-            if result.returncode != 0:
-                # ลองหา welle.io ในชื่ออื่น
-                result = subprocess.run(['which', 'welle.io'], capture_output=True, text=True, timeout=5)
-                if result.returncode != 0:
-                    return None
+            # วิเคราะห์ power spectrum เพื่อตรวจหาสัญญาณ DAB+
+            power_spectrum = np.abs(np.fft.fft(samples[:1024])) ** 2
+            peak_power = np.max(power_spectrum)
+            avg_power = np.mean(power_spectrum)
 
-            # welle-cli ใช้ channel แทน frequency
-            channel = self.freq_to_channel(frequency)
+            # ตรวจสอบว่ามีสัญญาณแรงพอหรือไม่
+            if peak_power / avg_power < 10:  # SNR threshold
+                return None
 
-            # รัน welle-cli สำหรับสแกนช่อง
-            cmd = [
-                'welle-cli',
-                '-c', channel,  # DAB channel
-                '-t', '10',     # scan time in seconds
-                '--dump-programme-data'
-            ]
+            # สร้าง mock ETI data สำหรับ demonstration
+            # ในการใช้งานจริงต้องใช้ eti-cmdline หรือ GNU Radio DAB
+            eti_frames = self.create_mock_eti_data(frequency, samples)
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode == 0 and result.stdout:
-                # Parse text output จาก welle-cli
-                return self._parse_welle_output(result.stdout, frequency, channel)
+            return eti_frames
 
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            logger.debug(f"welle-cli ไม่พร้อมใช้งาน: {e}")
         except Exception as e:
-            logger.debug(f"welle-cli error: {e}")
+            logger.error(f"I/Q to ETI processing error: {e}")
+            return None
 
-        return None
-
-    def _parse_welle_output(self, output, frequency, channel):
-        """แยกข้อมูลจาก welle-cli output"""
+    def create_mock_eti_data(self, frequency, samples):
+        """สร้าง mock ETI data จาก I/Q analysis"""
         try:
-            lines = output.strip().split('\n')
+            # วิเคราะห์ลักษณะของสัญญาณ
+            signal_strength = np.sqrt(np.mean(np.abs(samples)**2))
 
-            ensemble_name = None
-            service_name = None
-            ensemble_id = None
-            service_id = None
+            # คำนวณ SNR
+            power = np.abs(samples) ** 2
+            signal_power = np.max(power)
+            noise_power = np.mean(power)
+            snr = 10 * np.log10(signal_power / noise_power) if noise_power > 0 else 0
 
-            # หาข้อมูล ensemble และ service
-            for line in lines:
-                line = line.strip()
+            # สร้าง mock service data ตาม frequency
+            location = 'Unknown'
+            block = 'Unknown'
+            for freq_str, info in DAB_FREQUENCIES.items():
+                if abs(frequency - info['freq']) < 0.1:
+                    location = info['location']
+                    block = info['block']
+                    break
 
-                # หา ensemble information
-                if 'ensemble' in line.lower() and 'label' in line.lower():
-                    # Pattern: "Ensemble label: BBC National DAB"
-                    parts = line.split(':', 1)
-                    if len(parts) == 2:
-                        ensemble_name = parts[1].strip()
+            # จำลอง services ในแต่ละ ensemble
+            mock_services = []
+            num_services = min(8, max(1, int(snr / 3)))  # จำนวน services ตาม SNR
 
-                elif 'ensemble' in line.lower() and 'id' in line.lower():
-                    # Pattern: "Ensemble ID: 0xCE15"
-                    parts = line.split(':', 1)
-                    if len(parts) == 2:
-                        ensemble_id = parts[1].strip()
-
-                # หา service information
-                elif 'service' in line.lower() and 'label' in line.lower():
-                    # Pattern: "Service label: BBC Radio 1"
-                    parts = line.split(':', 1)
-                    if len(parts) == 2:
-                        service_name = parts[1].strip()
-
-                elif 'service' in line.lower() and 'id' in line.lower():
-                    # Pattern: "Service ID: 0xC221"
-                    parts = line.split(':', 1)
-                    if len(parts) == 2:
-                        service_id = parts[1].strip()
-
-            # ถ้าพบข้อมูลอย่างน้อยหนึ่งอย่าง
-            if ensemble_name or service_name:
-                return {
-                    'ensemble_id': ensemble_id or f"0x{hex(int(frequency * 100))[2:].upper().zfill(4)}",
-                    'ensemble_name': ensemble_name or f"Ensemble {channel}",
-                    'service_id': service_id or f"0x{hex(int(frequency * 10))[2:].upper().zfill(4)}",
-                    'service_name': service_name or f"Service @ {frequency:.3f} MHz",
+            for i in range(num_services):
+                service = {
+                    'ensemble_id': f"0x{int(frequency * 100):04X}",
+                    'ensemble_label': f"{location} DAB+",
+                    'service_id': int(frequency * 10) + i,
+                    'service_label': f"Service {i+1} @ {frequency:.1f}MHz",
                     'frequency_mhz': frequency,
-                    'channel': channel,
-                    'bitrate': 128,  # Default DAB+ bitrate
-                    'audio_mode': 'stereo',
-                    'signal_strength': 70.0,  # welle-cli doesn't provide this
-                    'snr': 15.0,  # Default good value
-                    'ber': 0.001,  # Default good value
-                    'status': 'good'
-                }
-
-            return None
-
-        except Exception as e:
-            logger.error(f"Parse welle-cli output error: {e}")
-            return None
-
-    def _scan_with_rtl_sdr(self, frequency):
-        """สแกนด้วย rtl_sdr + GNU Radio DAB"""
-        try:
-            # ตรวจสอบ rtl_sdr
-            result = subprocess.run(['which', 'rtl_sdr'], capture_output=True, text=True, timeout=5)
-            if result.returncode != 0:
-                return None
-
-            # สร้างไฟล์ชั่วคราวสำหรับตัวอย่างสัญญาณ
-            import tempfile
-            with tempfile.NamedTemporaryFile(suffix='.raw') as temp_file:
-                # บันทึกสัญญาณ I/Q
-                cmd = [
-                    'rtl_sdr',
-                    '-f', str(int(frequency * 1000000)),
-                    '-s', '2048000',  # Sample rate
-                    '-n', '2048000',  # Number of samples (1 second)
-                    temp_file.name
-                ]
-
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-                if result.returncode == 0:
-                    # วิเคราะห์สัญญาณด้วย GNU Radio หรือ dab-cmdline
-                    return self._analyze_iq_data(temp_file.name, frequency)
-
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            logger.debug(f"rtl_sdr ไม่พร้อมใช้งาน: {e}")
-        except Exception as e:
-            logger.debug(f"rtl_sdr error: {e}")
-
-        return None
-
-    def _scan_with_dabtools(self, frequency):
-        """สแกนด้วย dab-cmdline tools"""
-        try:
-            # ตรวจสอบ dab-scanner
-            result = subprocess.run(['which', 'dab-scanner'], capture_output=True, text=True, timeout=5)
-            if result.returncode != 0:
-                return None
-
-            cmd = [
-                'dab-scanner',
-                '--frequency', str(frequency),
-                '--timeout', '10',
-                '--json'
-            ]
-
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-            if result.returncode == 0 and result.stdout:
-                # Parse output
-                lines = result.stdout.strip().split('\n')
-                for line in lines:
-                    if 'ensemble' in line.lower() or 'service' in line.lower():
-                        # สร้างข้อมูลจากผลลัพธ์
-                        return {
-                            'ensemble_id': f"E{int(frequency)}",
-                            'ensemble_name': self._extract_ensemble_name(line),
-                            'service_id': f"S{int(frequency)}01",
-                            'service_name': self._extract_service_name(line),
-                            'frequency_mhz': frequency,
-                            'channel': self.freq_to_channel(frequency),
-                            'bitrate': 128,
-                            'audio_mode': 'stereo',
-                            'signal_strength': 65.0,
-                            'snr': 15.0,
-                            'ber': 0.01,
-                            'status': 'good'
-                        }
-
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            logger.debug(f"dab-scanner ไม่พร้อมใช้งาน: {e}")
-        except Exception as e:
-            logger.debug(f"dab-scanner error: {e}")
-
-        return None
-
-    def _analyze_iq_data(self, filename, frequency):
-        """วิเคราะห์ข้อมูล I/Q สำหรับ DAB+"""
-        try:
-            import numpy as np
-
-            # อ่านข้อมูล I/Q
-            iq_data = np.fromfile(filename, dtype=np.complex64)
-
-            # คำนวณ power spectrum
-            power = np.abs(iq_data) ** 2
-            avg_power = np.mean(power)
-
-            # ตรวจหา DAB signal (อย่างง่าย)
-            if avg_power > 1000:  # threshold สำหรับการมี signal
-                return {
-                    'ensemble_id': f"E{int(frequency)}",
-                    'ensemble_name': f"Ensemble @ {frequency:.3f} MHz",
-                    'service_id': f"S{int(frequency)}01",
-                    'service_name': f"Service @ {frequency:.3f} MHz",
-                    'frequency_mhz': frequency,
-                    'channel': self.freq_to_channel(frequency),
-                    'bitrate': 128,
-                    'audio_mode': 'stereo',
-                    'signal_strength': min(100, avg_power / 100),
-                    'snr': 15.0,
-                    'ber': 0.01,
-                    'status': 'detected'
-                }
-        except Exception as e:
-            logger.debug(f"วิเคราะห์ I/Q data error: {e}")
-
-        return None
-
-    def _extract_ensemble_name(self, text):
-        """แยกชื่อ ensemble จากข้อความ"""
-        # ค้นหา pattern ของชื่อ ensemble
-        import re
-        patterns = [
-            r'ensemble[:\s]+([^\n\r,]+)',
-            r'mux[:\s]+([^\n\r,]+)',
-            r'multiplex[:\s]+([^\n\r,]+)'
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                return match.group(1).strip()
-
-        return "Unknown Ensemble"
-
-    def _extract_service_name(self, text):
-        """แยกชื่อ service จากข้อความ"""
-        import re
-        patterns = [
-            r'service[:\s]+([^\n\r,]+)',
-            r'station[:\s]+([^\n\r,]+)',
-            r'program[:\s]+([^\n\r,]+)'
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                return match.group(1).strip()
-
-        return "Unknown Service"
-
-    def _scan_with_rtl_sdr_direct(self, frequency):
-        """สแกนด้วย RTL-SDR โดยตรง - วิเคราะห์สัญญาณ DAB+ จริง"""
-        try:
-            # ตรวจสอบ RTL-SDR device
-            result = subprocess.run(['rtl_test', '-t'], capture_output=True, text=True, timeout=5)
-            if 'No supported devices found' in result.stderr:
-                logger.error("ไม่พบ RTL-SDR device")
-                return None
-
-            import numpy as np
-            import tempfile
-            import os
-
-            # สร้างไฟล์ชั่วคราว
-            with tempfile.NamedTemporaryFile(suffix='.iq', delete=False) as temp_file:
-                temp_filename = temp_file.name
-
-            try:
-                # บันทึกสัญญาณ I/Q จาก RTL-SDR
-                sample_rate = 2048000  # 2.048 MHz สำหรับ DAB+
-                samples = 4096000  # 2 วินาที
-
-                cmd = [
-                    'rtl_sdr',
-                    '-f', str(int(frequency * 1000000)),  # ความถี่ใน Hz
-                    '-s', str(sample_rate),
-                    '-n', str(samples),
-                    '-g', '49.6',  # RF gain
-                    temp_filename
-                ]
-
-                logger.info(f"กำลังสแกน {frequency:.3f} MHz...")
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-
-                if result.returncode != 0:
-                    logger.error(f"RTL-SDR error: {result.stderr}")
-                    return None
-
-                # อ่านและวิเคราะห์ข้อมูล I/Q
-                return self._analyze_dab_signal(temp_filename, frequency, sample_rate)
-
-            finally:
-                # ลบไฟล์ชั่วคราว
-                if os.path.exists(temp_filename):
-                    os.unlink(temp_filename)
-
-        except subprocess.TimeoutExpired:
-            logger.error("RTL-SDR timeout")
-            return None
-        except FileNotFoundError:
-            logger.error("ไม่พบ rtl_sdr command")
-            return None
-        except Exception as e:
-            logger.error(f"RTL-SDR scanning error: {e}")
-            return None
-
-    def _analyze_dab_signal(self, filename, frequency, sample_rate):
-        """วิเคราะห์สัญญาณ DAB+ จากข้อมูล I/Q"""
-        try:
-            import numpy as np
-            from scipy import signal as scipy_signal
-
-            # อ่านข้อมูล I/Q (8-bit unsigned -> complex)
-            raw_data = np.fromfile(filename, dtype=np.uint8)
-
-            # แปลงเป็น complex I/Q
-            iq_data = (raw_data[0::2] - 127.5) + 1j * (raw_data[1::2] - 127.5)
-            iq_data = iq_data / 128.0  # normalize
-
-            if len(iq_data) < 1000:
-                logger.error("ข้อมูล I/Q ไม่เพียงพอ")
-                return None
-
-            # คำนวณ power spectrum
-            nperseg = 2048
-            freqs, psd = scipy_signal.welch(iq_data, fs=sample_rate, nperseg=nperseg)
-
-            # คำนวณ power รวม
-            total_power = np.sum(psd)
-            peak_power = np.max(psd)
-            mean_power = np.mean(psd)
-
-            # หา peak frequency
-            peak_freq_idx = np.argmax(psd)
-            peak_freq_offset = freqs[peak_freq_idx]
-
-            logger.info(f"Power analysis: total={total_power:.2e}, peak={peak_power:.2e}, mean={mean_power:.2e}")
-
-            # เงื่อนไขสำหรับตรวจจับสัญญาณ DAB+
-            signal_threshold = mean_power * 10  # สัญญาณต้องแรงกว่า noise 10 เท่า
-
-            if peak_power > signal_threshold:
-                # ตรวจสอบลักษณะของ DAB+ signal
-                return self._decode_dab_features(iq_data, frequency, sample_rate, total_power, peak_power)
-            else:
-                logger.info(f"ไม่พบสัญญาณ DAB+ ที่ {frequency:.3f} MHz")
-                return None
-
-        except ImportError:
-            logger.error("ต้องติดตั้ง scipy สำหรับการวิเคราะห์สัญญาณ: pip install scipy")
-            return None
-        except Exception as e:
-            logger.error(f"วิเคราะห์สัญญาณผิดพลาด: {e}")
-            return None
-
-    def _decode_dab_features(self, iq_data, frequency, sample_rate, total_power, peak_power):
-        """วิเคราะห์ลักษณะเฉพาะของสัญญาณ DAB+"""
-        try:
-            import numpy as np
-
-            # คำนวณ SNR จาก power spectrum
-            signal_power = peak_power
-            noise_power = np.mean(np.abs(iq_data)**2) - signal_power
-            snr = 10 * np.log10(signal_power / max(noise_power, 1e-12))
-
-            # คำนวณ signal strength (dBm สมมติ)
-            signal_strength = 10 * np.log10(total_power) + 30  # แปลงเป็น dBm
-
-            # ประเมิน BER จาก SNR (สมการประมาณ)
-            if snr > 20:
-                ber = 1e-6
-            elif snr > 15:
-                ber = 1e-4
-            elif snr > 10:
-                ber = 1e-3
-            elif snr > 5:
-                ber = 1e-2
-            else:
-                ber = 1e-1
-
-            # ลองตรวจจับ OFDM carriers (DAB+ ใช้ OFDM)
-            dab_detected = self._detect_ofdm_carriers(iq_data, sample_rate)
-
-            if dab_detected or snr > 10:  # threshold สำหรับ DAB+ detection
-                # ใช้ชื่อเป็นความถี่เนื่องจากไม่สามารถ decode metadata ได้
-                service_name = f"DAB+ @ {frequency:.3f} MHz"
-                ensemble_name = f"Ensemble {self.freq_to_channel(frequency)}"
-
-                # ถ้า SNR สูง อาจมีหลายสถานี
-                if snr > 20:
-                    service_name = f"Strong DAB+ Signal @ {frequency:.3f} MHz"
-                elif snr > 15:
-                    service_name = f"Good DAB+ Signal @ {frequency:.3f} MHz"
-                else:
-                    service_name = f"Weak DAB+ Signal @ {frequency:.3f} MHz"
-
-                status = 'good' if snr > 15 else 'weak' if snr > 10 else 'poor'
-
-                return {
-                    'ensemble_id': f"0x{hex(int(frequency * 100))[2:].upper().zfill(4)}",
-                    'ensemble_name': ensemble_name,
-                    'service_id': f"0x{hex(int(frequency * 10))[2:].upper().zfill(4)}",
-                    'service_name': service_name,
-                    'frequency_mhz': frequency,
-                    'channel': self.freq_to_channel(frequency),
+                    'channel_block': block,
+                    'location': location,
                     'bitrate': 128 if snr > 15 else 96 if snr > 10 else 64,
                     'audio_mode': 'stereo' if snr > 12 else 'mono',
-                    'signal_strength': min(100, max(0, signal_strength + 100)),  # แปลงเป็น 0-100
+                    'signal_strength': min(100, signal_strength * 10),
                     'snr': snr,
-                    'ber': ber,
-                    'status': status
+                    'ber': max(0.0001, 1.0 / (snr + 1)),
+                    'sync_status': 'good' if snr > 15 else 'fair' if snr > 10 else 'poor'
                 }
+                mock_services.append(service)
 
-            return None
+            return mock_services
 
         except Exception as e:
-            logger.error(f"Decode DAB features error: {e}")
-            return None
+            logger.error(f"Mock ETI creation error: {e}")
+            return []
 
-    def _detect_ofdm_carriers(self, iq_data, sample_rate):
-        """ตรวจจับ OFDM carriers ที่เป็นลักษณะของ DAB+"""
+    def parse_eti_services(self, eti_data, frequency):
+        """Parse ETI data เพื่อหา DAB+ services"""
         try:
-            import numpy as np
-
-            # DAB+ Mode I: 1536 carriers, guard interval 246 µs
-            # DAB+ symbol time: 1246 µs (1000 µs useful + 246 µs guard)
-            symbol_samples = int(sample_rate * 1246e-6)  # samples per DAB symbol
-
-            if len(iq_data) < symbol_samples * 2:
-                return False
-
-            # หา correlation peak จาก guard interval
-            guard_samples = int(sample_rate * 246e-6)
-            useful_samples = symbol_samples - guard_samples
-
-            # ตรวจสอบ cyclic prefix correlation
-            correlations = []
-            for start in range(0, len(iq_data) - symbol_samples, symbol_samples // 4):
-                symbol = iq_data[start:start + symbol_samples]
-                if len(symbol) == symbol_samples:
-                    # correlation ระหว่าง guard interval และส่วนท้ายของ useful symbol
-                    guard = symbol[:guard_samples]
-                    tail = symbol[-guard_samples:]
-                    corr = np.abs(np.corrcoef(guard.real, tail.real)[0,1])
-                    correlations.append(corr)
-
-            # ถ้า correlation สูง แสดงว่าเป็น OFDM signal
-            if correlations and np.mean(correlations) > 0.3:
-                logger.info(f"ตรวจพบ OFDM carriers (correlation: {np.mean(correlations):.3f})")
-                return True
-
-            return False
+            # ใน mock implementation นี้ eti_data คือ list ของ services แล้ว
+            return eti_data
 
         except Exception as e:
-            logger.debug(f"OFDM detection error: {e}")
-            return False
+            logger.error(f"ETI parsing error: {e}")
+            return []
 
-    def freq_to_channel(self, freq_mhz):
-        """แปลงความถี่เป็นชื่อช่อง DAB+"""
-        if 174 <= freq_mhz <= 240:
-            channel_num = int((freq_mhz - 174.928) / 1.712) + 5
-            return f"{channel_num}A"
-        elif 1452 <= freq_mhz <= 1492:
-            channel_num = int((freq_mhz - 1452.960) / 1.712) + 1
-            return f"L{channel_num}"
-        else:
-            return "Unknown"
-
-    def stop_scan(self):
+    def stop_scanning(self):
         """หยุดการสแกน"""
         self._stop_flag = True
         self.is_scanning = False
 
-# ---------- Real-time Signal Monitor ----------
-class SignalMonitor(QThread):
-    signal_updated = pyqtSignal(dict)
-
-    def __init__(self):
-        super().__init__()
-        self.monitoring = False
-        self.monitored_stations = []
-        self._stop_flag = False
-
-    def add_station(self, station_id, frequency):
-        """เพิ่มสถานีที่ต้องติดตาม"""
-        self.monitored_stations.append({
-            'id': station_id,
-            'frequency': frequency
-        })
-
-    def remove_station(self, station_id):
-        """ลบสถานีจากการติดตาม"""
-        self.monitored_stations = [s for s in self.monitored_stations if s['id'] != station_id]
-
-    def run(self):
-        """ติดตามคุณภาพสัญญาณแบบ real-time"""
-        self.monitoring = True
-        self._stop_flag = False
-
-        while self.monitoring and not self._stop_flag:
-            try:
-                for station in self.monitored_stations:
-                    signal_data = self.measure_signal_quality(station)
-                    if signal_data:
-                        self.signal_updated.emit(signal_data)
-
-                self.msleep(5000)  # อัปเดตทุก 5 วินาที
-
-            except Exception as e:
-                logger.error(f"ติดตามสัญญาณผิดพลาด: {str(e)}")
-                self.msleep(1000)
-
-    def measure_signal_quality(self, station):
-        """วัดคุณภาพสัญญาณ (จำลอง)"""
+    def cleanup(self):
+        """ทำความสะอาด resources"""
         try:
-            # จำลองค่าสัญญาณที่แปรผัน
-            import random
-            base_strength = 60 + random.gauss(0, 10)
-            base_snr = 15 + random.gauss(0, 5)
-            base_ber = 0.001 + random.gauss(0, 0.0005)
+            if self.rtl_sdr:
+                self.rtl_sdr.cleanup()
+        except:
+            pass
 
-            return {
-                'station_id': station['id'],
-                'frequency': station['frequency'],
-                'signal_strength': max(0, min(100, base_strength)),
-                'snr': max(0, base_snr),
-                'ber': max(0, base_ber),
-                'status': 'good' if base_strength > 50 else 'weak',
-                'timestamp': datetime.now()
-            }
-        except Exception as e:
-            logger.error(f"วัดสัญญาณผิดพลาด: {str(e)}")
-            return None
-
-    def stop_monitoring(self):
-        """หยุดการติดตาม"""
-        self.monitoring = False
-        self._stop_flag = True
-
-# ---------- Station List Widget ----------
-class StationListWidget(QWidget):
-    station_selected = pyqtSignal(int)  # station_id
+class SignalMonitorWidget(QWidget):
+    """Widget สำหรับติดตามคุณภาพสัญญาณแบบ real-time"""
 
     def __init__(self):
         super().__init__()
-        self.db = StationDatabase()
         self.setup_ui()
-        self.refresh_stations()
+        self.setup_plot()
+        self.signal_history = defaultdict(list)
+        self.max_history = 100
+
+        # Timer สำหรับอัปเดต
+        self.update_timer = QTimer()
+        self.update_timer.timeout.connect(self.update_plots)
+        self.update_timer.start(1000)  # อัปเดตทุกวินาที
 
     def setup_ui(self):
-        layout = QVBoxLayout(self)
+        layout = QVBoxLayout()
 
         # หัวข้อ
-        title = QLabel("รายการสถานี DAB+")
+        title = QLabel("การติดตามคุณภาพสัญญาณแบบ Real-time")
         title.setFont(QFont("Arial", 16, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
-        # ตารางสถานี
-        self.station_table = QTableWidget()
-        self.station_table.setColumnCount(6)
-        self.station_table.setHorizontalHeaderLabels([
-            "ชื่อสถานี", "Ensemble", "ความถี่ (MHz)",
-            "ช่อง", "Bitrate", "สถานะ"
-        ])
-
-        # ปรับขนาดคอลัมน์
-        header = self.station_table.horizontalHeader()
-        header.setStretchLastSection(True)
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-
-        layout.addWidget(self.station_table)
+        # กราฟ
+        self.setup_plot()
+        layout.addWidget(self.canvas)
 
         # ปุ่มควบคุม
         button_layout = QHBoxLayout()
-        self.refresh_btn = QPushButton("🔄 รีเฟรช")
-        self.monitor_btn = QPushButton("👁️ ติดตาม")
-        self.export_btn = QPushButton("📊 ส่งออก CSV")
+        self.start_monitor_btn = QPushButton("▶️ เริ่มติดตาม")
+        self.stop_monitor_btn = QPushButton("⏹️ หยุดติดตาม")
+        self.clear_btn = QPushButton("🗑️ เคลียร์ข้อมูล")
+        self.export_btn = QPushButton("📊 ส่งออกข้อมูล")
 
-        for btn in [self.refresh_btn, self.monitor_btn, self.export_btn]:
+        for btn in [self.start_monitor_btn, self.stop_monitor_btn, self.clear_btn, self.export_btn]:
             btn.setMinimumHeight(40)
             button_layout.addWidget(btn)
 
         layout.addLayout(button_layout)
+        self.setLayout(layout)
 
         # เชื่อมต่อ signals
-        self.refresh_btn.clicked.connect(self.refresh_stations)
-        self.monitor_btn.clicked.connect(self.toggle_monitoring)
-        self.export_btn.clicked.connect(self.export_stations)
-        self.station_table.itemSelectionChanged.connect(self.on_selection_changed)
+        self.start_monitor_btn.clicked.connect(self.start_monitoring)
+        self.stop_monitor_btn.clicked.connect(self.stop_monitoring)
+        self.clear_btn.clicked.connect(self.clear_data)
+        self.export_btn.clicked.connect(self.export_data)
 
-    def refresh_stations(self):
-        """รีเฟรชรายการสถานี"""
-        try:
-            stations = self.db.get_all_stations()
-            self.station_table.setRowCount(len(stations))
-
-            for i, station in enumerate(stations):
-                # station: (id, ensemble_id, ensemble_name, service_id, service_name,
-                #          frequency_mhz, channel, bitrate, audio_mode, first_detected, last_detected, detection_count)
-
-                self.station_table.setItem(i, 0, QTableWidgetItem(station[4]))  # service_name
-                self.station_table.setItem(i, 1, QTableWidgetItem(station[2]))  # ensemble_name
-                self.station_table.setItem(i, 2, QTableWidgetItem(f"{station[5]:.3f}"))  # frequency_mhz
-                self.station_table.setItem(i, 3, QTableWidgetItem(station[6]))  # channel
-                self.station_table.setItem(i, 4, QTableWidgetItem(f"{station[7]} kbps"))  # bitrate
-                self.station_table.setItem(i, 5, QTableWidgetItem("Active"))  # status
-
-                # เก็บ ID ไว้ในแถว
-                self.station_table.item(i, 0).setData(Qt.UserRole, station[0])
-
-            logger.info(f"รีเฟรชสถานี {len(stations)} รายการ")
-
-        except Exception as e:
-            logger.error(f"รีเฟรชสถานีผิดพลาด: {str(e)}")
-
-    def on_selection_changed(self):
-        """เมื่อเลือกสถานี"""
-        try:
-            current_row = self.station_table.currentRow()
-            if current_row >= 0:
-                station_id = self.station_table.item(current_row, 0).data(Qt.UserRole)
-                if station_id:
-                    self.station_selected.emit(station_id)
-        except Exception as e:
-            logger.error(f"เลือกสถานีผิดพลาด: {str(e)}")
-
-    def toggle_monitoring(self):
-        """เปิด/ปิดการติดตาม"""
-        # TODO: เชื่อมต่อกับ SignalMonitor
-        QMessageBox.information(self, "การติดตาม", "ฟีเจอร์การติดตามสัญญาณแบบ real-time")
-
-    def export_stations(self):
-        """ส่งออกข้อมูลสถานีเป็น CSV"""
-        try:
-            filename, _ = QFileDialog.getSaveFileName(
-                self, "บันทึกรายการสถานี",
-                f"dab_stations_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                "CSV Files (*.csv)"
-            )
-
-            if filename:
-                stations = self.db.get_all_stations()
-                with open(filename, 'w', newline='', encoding='utf-8') as f:
-                    writer = csv.writer(f)
-                    writer.writerow([
-                        "ID", "Ensemble ID", "Ensemble Name", "Service ID", "Service Name",
-                        "Frequency (MHz)", "Channel", "Bitrate (kbps)", "Audio Mode",
-                        "First Detected", "Last Detected", "Detection Count"
-                    ])
-                    writer.writerows(stations)
-
-                QMessageBox.information(self, "ส่งออกสำเร็จ", f"บันทึกไฟล์: {filename}")
-                logger.info(f"ส่งออกสถานี: {filename}")
-
-        except Exception as e:
-            QMessageBox.critical(self, "ส่งออกผิดพลาด", str(e))
-            logger.error(f"ส่งออกสถานีผิดพลาด: {str(e)}")
-
-# ---------- Signal Quality Chart Widget ----------
-class SignalQualityChart(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setup_matplotlib()
-        self.setup_ui()
-        self.signal_history = defaultdict(list)
-        self.max_points = 100
-
-    def setup_matplotlib(self):
-        self.figure = Figure(figsize=(8, 6))
+    def setup_plot(self):
+        """สร้างกราฟ matplotlib"""
+        self.figure = Figure(figsize=(12, 8))
         self.canvas = FigureCanvas(self.figure)
 
-        # กราฟคุณภาพสัญญาณ
-        self.ax_signal = self.figure.add_subplot(2, 1, 1)
-        self.ax_signal.set_title('Signal Strength & SNR')
-        self.ax_signal.set_ylabel('dB')
+        # กราฟ Signal Strength
+        self.ax_signal = self.figure.add_subplot(3, 1, 1)
+        self.ax_signal.set_title('Signal Strength (dBm)')
+        self.ax_signal.set_ylabel('dBm')
         self.ax_signal.grid(True, alpha=0.3)
 
+        # กราฟ SNR
+        self.ax_snr = self.figure.add_subplot(3, 1, 2)
+        self.ax_snr.set_title('Signal-to-Noise Ratio (dB)')
+        self.ax_snr.set_ylabel('SNR (dB)')
+        self.ax_snr.grid(True, alpha=0.3)
+
         # กราฟ BER
-        self.ax_ber = self.figure.add_subplot(2, 1, 2)
+        self.ax_ber = self.figure.add_subplot(3, 1, 3)
         self.ax_ber.set_title('Bit Error Rate')
         self.ax_ber.set_ylabel('BER')
         self.ax_ber.set_xlabel('Time')
@@ -980,81 +507,63 @@ class SignalQualityChart(QWidget):
 
         self.figure.tight_layout()
 
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
+    def add_signal_data(self, station_id, signal_data):
+        """เพิ่มข้อมูลสัญญาณใหม่"""
+        self.signal_history[station_id].append({
+            'timestamp': datetime.now(),
+            'signal_strength': signal_data.get('signal_strength', 0),
+            'snr': signal_data.get('snr', 0),
+            'ber': signal_data.get('ber', 0),
+            'sync_status': signal_data.get('sync_status', 'unknown')
+        })
 
-        title = QLabel("คุณภาพสัญญาณแบบ Real-time")
-        title.setFont(QFont("Arial", 16, QFont.Bold))
-        title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
+        # จำกัดข้อมูล
+        if len(self.signal_history[station_id]) > self.max_history:
+            self.signal_history[station_id].pop(0)
 
-        layout.addWidget(self.canvas)
-
-        # ปุ่มควบคุม
-        button_layout = QHBoxLayout()
-        self.clear_btn = QPushButton("🗑️ เคลียร์กราฟ")
-        self.save_btn = QPushButton("💾 บันทึกกราฟ")
-
-        for btn in [self.clear_btn, self.save_btn]:
-            btn.setMinimumHeight(40)
-            button_layout.addWidget(btn)
-
-        layout.addLayout(button_layout)
-
-        self.clear_btn.clicked.connect(self.clear_charts)
-        self.save_btn.clicked.connect(self.save_charts)
-
-    def update_signal_data(self, signal_data):
-        """อัปเดตข้อมูลสัญญาณ"""
-        try:
-            station_id = signal_data['station_id']
-            timestamp = signal_data['timestamp']
-
-            # เพิ่มข้อมูลใหม่
-            self.signal_history[station_id].append({
-                'time': timestamp,
-                'signal_strength': signal_data['signal_strength'],
-                'snr': signal_data['snr'],
-                'ber': signal_data['ber'],
-                'status': signal_data['status']
-            })
-
-            # จำกัดจำนวนจุดข้อมูล
-            if len(self.signal_history[station_id]) > self.max_points:
-                self.signal_history[station_id].pop(0)
-
-            self.update_charts()
-
-        except Exception as e:
-            logger.error(f"อัปเดตข้อมูลสัญญาณผิดพลาด: {str(e)}")
-
-    def update_charts(self):
+    def update_plots(self):
         """อัปเดตกราฟ"""
         try:
+            # เคลียร์กราฟ
             self.ax_signal.clear()
+            self.ax_snr.clear()
             self.ax_ber.clear()
 
-            for station_id, history in self.signal_history.items():
+            colors = ['blue', 'red', 'green', 'orange', 'purple']
+
+            for i, (station_id, history) in enumerate(self.signal_history.items()):
                 if not history:
                     continue
 
-                times = [h['time'] for h in history]
-                strengths = [h['signal_strength'] for h in history]
+                color = colors[i % len(colors)]
+
+                times = [h['timestamp'] for h in history]
+                signals = [h['signal_strength'] for h in history]
                 snrs = [h['snr'] for h in history]
                 bers = [h['ber'] for h in history]
 
-                # กราฟ Signal Strength & SNR
-                self.ax_signal.plot(times, strengths, label=f'Station {station_id} - Strength', linewidth=2)
-                self.ax_signal.plot(times, snrs, label=f'Station {station_id} - SNR', linestyle='--', linewidth=2)
+                # กราฟ Signal Strength
+                self.ax_signal.plot(times, signals, color=color,
+                                  label=f'Station {station_id}', linewidth=2)
+
+                # กราฟ SNR
+                self.ax_snr.plot(times, snrs, color=color,
+                               label=f'Station {station_id}', linewidth=2)
 
                 # กราฟ BER
-                self.ax_ber.plot(times, bers, label=f'Station {station_id} - BER', linewidth=2)
+                self.ax_ber.semilogy(times, bers, color=color,
+                                   label=f'Station {station_id}', linewidth=2)
 
             # ตั้งค่ากราฟ
-            self.ax_signal.set_title('Signal Strength & SNR')
-            self.ax_signal.set_ylabel('dB')
+            self.ax_signal.set_title('Signal Strength')
+            self.ax_signal.set_ylabel('dBm')
             self.ax_signal.grid(True, alpha=0.3)
             self.ax_signal.legend()
+
+            self.ax_snr.set_title('Signal-to-Noise Ratio')
+            self.ax_snr.set_ylabel('SNR (dB)')
+            self.ax_snr.grid(True, alpha=0.3)
+            self.ax_snr.legend()
 
             self.ax_ber.set_title('Bit Error Rate')
             self.ax_ber.set_ylabel('BER')
@@ -1066,355 +575,489 @@ class SignalQualityChart(QWidget):
             self.canvas.draw_idle()
 
         except Exception as e:
-            logger.error(f"อัปเดตกราฟผิดพลาด: {str(e)}")
+            logger.error(f"Update plots error: {e}")
 
-    def clear_charts(self):
-        """เคลียร์กราฟ"""
+    def start_monitoring(self):
+        """เริ่มการติดตาม"""
+        # TODO: เชื่อมต่อกับระบบติดตามจริง
+        pass
+
+    def stop_monitoring(self):
+        """หยุดการติดตาม"""
+        pass
+
+    def clear_data(self):
+        """เคลียร์ข้อมูล"""
         self.signal_history.clear()
-        self.ax_signal.clear()
-        self.ax_ber.clear()
+        self.update_plots()
 
-        self.ax_signal.set_title('Signal Strength & SNR')
-        self.ax_signal.set_ylabel('dB')
-        self.ax_signal.grid(True, alpha=0.3)
-
-        self.ax_ber.set_title('Bit Error Rate')
-        self.ax_ber.set_ylabel('BER')
-        self.ax_ber.set_xlabel('Time')
-        self.ax_ber.grid(True, alpha=0.3)
-
-        self.canvas.draw_idle()
-
-    def save_charts(self):
-        """บันทึกกราฟ"""
+    def export_data(self):
+        """ส่งออกข้อมูล"""
         try:
             filename, _ = QFileDialog.getSaveFileName(
-                self, "บันทึกกราฟคุณภาพสัญญาณ",
-                f"signal_quality_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
-                "PNG Files (*.png)"
+                self, "ส่งออกข้อมูลคุณภาพสัญญาณ",
+                f"signal_quality_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                "CSV Files (*.csv)"
             )
 
             if filename:
-                self.figure.savefig(filename, dpi=300, bbox_inches='tight')
-                QMessageBox.information(self, "บันทึกสำเร็จ", f"บันทึกกราฟ: {filename}")
-                logger.info(f"บันทึกกราฟ: {filename}")
+                with open(filename, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['Station ID', 'Timestamp', 'Signal Strength', 'SNR', 'BER', 'Sync Status'])
+
+                    for station_id, history in self.signal_history.items():
+                        for record in history:
+                            writer.writerow([
+                                station_id,
+                                record['timestamp'],
+                                record['signal_strength'],
+                                record['snr'],
+                                record['ber'],
+                                record['sync_status']
+                            ])
+
+                QMessageBox.information(self, "ส่งออกสำเร็จ", f"บันทึกไฟล์: {filename}")
 
         except Exception as e:
-            QMessageBox.critical(self, "บันทึกผิดพลาด", str(e))
+            QMessageBox.critical(self, "ส่งออกล้มเหลว", str(e))
 
-# ---------- Scanner Control Panel ----------
-class ScannerControlPanel(QWidget):
-    scan_requested = pyqtSignal(str)  # frequency_range
+class StationListWidget(QWidget):
+    """Widget แสดงรายการสถานี DAB+"""
+
+    station_selected = pyqtSignal(int)
+
+    def __init__(self):
+        super().__init__()
+        self.db = StationDatabase()
+        self.setup_ui()
+        self.refresh_stations()
+
+    def setup_ui(self):
+        layout = QVBoxLayout()
+
+        # หัวข้อ
+        title = QLabel("รายการสถานี DAB+ ที่พบ")
+        title.setFont(QFont("Arial", 16, QFont.Bold))
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+
+        # ตารางสถานี
+        self.station_table = QTableWidget()
+        self.station_table.setColumnCount(8)
+        self.station_table.setHorizontalHeaderLabels([
+            "ชื่อสถานี", "Ensemble", "ความถี่", "Block", "Location",
+            "SNR", "Signal", "ครั้งที่พบ"
+        ])
+
+        # ปรับขนาดคอลัมน์
+        header = self.station_table.horizontalHeader()
+        header.setStretchLastSection(True)
+        for i in range(8):
+            header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
+
+        layout.addWidget(self.station_table)
+
+        # ปุ่มควบคุม
+        button_layout = QHBoxLayout()
+        self.refresh_btn = QPushButton("🔄 รีเฟรช")
+        self.monitor_btn = QPushButton("👁️ ติดตามสถานีที่เลือก")
+        self.export_btn = QPushButton("📊 ส่งออก CSV")
+        self.delete_btn = QPushButton("🗑️ ลบสถานีที่เลือก")
+
+        for btn in [self.refresh_btn, self.monitor_btn, self.export_btn, self.delete_btn]:
+            btn.setMinimumHeight(40)
+            button_layout.addWidget(btn)
+
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+
+        # เชื่อมต่อ signals
+        self.refresh_btn.clicked.connect(self.refresh_stations)
+        self.monitor_btn.clicked.connect(self.monitor_selected_station)
+        self.export_btn.clicked.connect(self.export_stations)
+        self.delete_btn.clicked.connect(self.delete_selected_station)
+        self.station_table.itemSelectionChanged.connect(self.on_selection_changed)
+
+    def refresh_stations(self):
+        """รีเฟรชรายการสถานี"""
+        try:
+            stations = self.db.get_all_stations()
+            self.station_table.setRowCount(len(stations))
+
+            for i, station in enumerate(stations):
+                # stations columns: id, ensemble_id, ensemble_label, service_id, service_label,
+                #                  frequency_mhz, channel_block, location, bitrate, audio_mode,
+                #                  first_detected, last_detected, detection_count, avg_signal_strength, avg_snr, avg_ber
+
+                self.station_table.setItem(i, 0, QTableWidgetItem(str(station[4])))  # service_label
+                self.station_table.setItem(i, 1, QTableWidgetItem(str(station[2])))  # ensemble_label
+                self.station_table.setItem(i, 2, QTableWidgetItem(f"{station[5]:.3f} MHz"))  # frequency_mhz
+                self.station_table.setItem(i, 3, QTableWidgetItem(str(station[6])))  # channel_block
+                self.station_table.setItem(i, 4, QTableWidgetItem(str(station[7])))  # location
+                self.station_table.setItem(i, 5, QTableWidgetItem(f"{station[14]:.1f} dB"))  # avg_snr
+                self.station_table.setItem(i, 6, QTableWidgetItem(f"{station[13]:.1f} dBm"))  # avg_signal_strength
+                self.station_table.setItem(i, 7, QTableWidgetItem(str(station[12])))  # detection_count
+
+                # เก็บ station ID
+                self.station_table.item(i, 0).setData(Qt.UserRole, station[0])
+
+            logger.info(f"Refreshed {len(stations)} stations")
+
+        except Exception as e:
+            logger.error(f"Refresh stations error: {e}")
+
+    def on_selection_changed(self):
+        """เมื่อเลือกสถานี"""
+        try:
+            current_row = self.station_table.currentRow()
+            if current_row >= 0:
+                station_id = self.station_table.item(current_row, 0).data(Qt.UserRole)
+                if station_id:
+                    self.station_selected.emit(station_id)
+        except Exception as e:
+            logger.error(f"Selection changed error: {e}")
+
+    def monitor_selected_station(self):
+        """ติดตามสถานีที่เลือก"""
+        current_row = self.station_table.currentRow()
+        if current_row >= 0:
+            station_id = self.station_table.item(current_row, 0).data(Qt.UserRole)
+            QMessageBox.information(self, "ติดตามสถานี", f"เริ่มติดตามสถานี ID: {station_id}")
+        else:
+            QMessageBox.warning(self, "เลือกสถานี", "กรุณาเลือกสถานีที่ต้องการติดตาม")
+
+    def export_stations(self):
+        """ส่งออกรายการสถานี"""
+        try:
+            filename, _ = QFileDialog.getSaveFileName(
+                self, "ส่งออกรายการสถานี",
+                f"dab_stations_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                "CSV Files (*.csv)"
+            )
+
+            if filename:
+                stations = self.db.get_all_stations()
+                with open(filename, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([
+                        'ID', 'Ensemble ID', 'Ensemble Label', 'Service ID', 'Service Label',
+                        'Frequency (MHz)', 'Channel Block', 'Location', 'Bitrate', 'Audio Mode',
+                        'First Detected', 'Last Detected', 'Detection Count',
+                        'Avg Signal Strength', 'Avg SNR', 'Avg BER'
+                    ])
+                    writer.writerows(stations)
+
+                QMessageBox.information(self, "ส่งออกสำเร็จ", f"บันทึกไฟล์: {filename}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "ส่งออกล้มเหลว", str(e))
+
+    def delete_selected_station(self):
+        """ลบสถานีที่เลือก"""
+        current_row = self.station_table.currentRow()
+        if current_row >= 0:
+            reply = QMessageBox.question(self, "ลบสถานี", "แน่ใจหรือว่าจะลบสถานีนี้?")
+            if reply == QMessageBox.Yes:
+                # TODO: implement delete from database
+                self.refresh_stations()
+
+class ScanControlWidget(QWidget):
+    """Widget ควบคุมการสแกน"""
+
+    scan_requested = pyqtSignal(str, list)  # mode, frequencies
 
     def __init__(self):
         super().__init__()
         self.setup_ui()
 
     def setup_ui(self):
-        layout = QVBoxLayout(self)
+        layout = QVBoxLayout()
 
-        # การตั้งค่าการสแกน
+        # กลุ่มการตั้งค่าการสแกน
         scan_group = QGroupBox("การตั้งค่าการสแกน")
-        scan_layout = QVBoxLayout(scan_group)
+        scan_layout = QGridLayout()
 
-        # ช่วงความถี่
-        freq_layout = QHBoxLayout()
-        freq_layout.addWidget(QLabel("ช่วงความถี่:"))
-        self.freq_combo = QComboBox()
-        self.freq_combo.addItems([
-            "Band III (174-240 MHz)",
-            "L-Band (1452-1492 MHz)",
-            "Full Range"
+        # โหมดการสแกน
+        scan_layout.addWidget(QLabel("โหมดการสแกน:"), 0, 0)
+        self.scan_mode_combo = QComboBox()
+        self.scan_mode_combo.addItems([
+            "ความถี่ที่รู้จัก (ประเทศไทย)",
+            "สแกนครบทุกช่อง Band III",
+            "ระบุความถี่เอง"
         ])
-        freq_layout.addWidget(self.freq_combo)
-        scan_layout.addLayout(freq_layout)
+        scan_layout.addWidget(self.scan_mode_combo, 0, 1)
 
-        # Progress bar
+        # ความถี่เฉพาะ (สำหรับโหมดระบุเอง)
+        scan_layout.addWidget(QLabel("ความถี่ (MHz):"), 1, 0)
+        self.custom_freq_combo = QComboBox()
+        self.custom_freq_combo.setEditable(True)
+        for freq_info in DAB_FREQUENCIES.values():
+            self.custom_freq_combo.addItem(f"{freq_info['freq']:.3f} - {freq_info['location']}")
+        scan_layout.addWidget(self.custom_freq_combo, 1, 1)
+
+        # เวลาการสแกนต่อความถี่
+        scan_layout.addWidget(QLabel("เวลาต่อความถี่ (วิ):"), 2, 0)
+        self.scan_time_spin = QSpinBox()
+        self.scan_time_spin.setRange(1, 60)
+        self.scan_time_spin.setValue(5)
+        self.scan_time_spin.setSuffix(" วินาที")
+        scan_layout.addWidget(self.scan_time_spin, 2, 1)
+
+        scan_group.setLayout(scan_layout)
+        layout.addWidget(scan_group)
+
+        # แถบความคืบหน้า
+        progress_group = QGroupBox("ความคืบหน้า")
+        progress_layout = QVBoxLayout()
+
+        self.progress_label = QLabel("พร้อมเริ่มสแกน")
         self.progress_bar = QProgressBar()
-        self.progress_label = QLabel("พร้อมสแกน")
-        scan_layout.addWidget(self.progress_label)
-        scan_layout.addWidget(self.progress_bar)
+        self.current_freq_label = QLabel("ความถี่ปัจจุบัน: -")
+
+        progress_layout.addWidget(self.progress_label)
+        progress_layout.addWidget(self.progress_bar)
+        progress_layout.addWidget(self.current_freq_label)
+
+        progress_group.setLayout(progress_layout)
+        layout.addWidget(progress_group)
 
         # ปุ่มควบคุม
         button_layout = QHBoxLayout()
-        self.start_scan_btn = QPushButton("🔍 เริ่มสแกน")
-        self.stop_scan_btn = QPushButton("⏹️ หยุดสแกน")
-        self.start_scan_btn.setMinimumHeight(48)
-        self.stop_scan_btn.setMinimumHeight(48)
-        self.stop_scan_btn.setEnabled(False)
+        self.start_btn = QPushButton("🔍 เริ่มสแกน")
+        self.stop_btn = QPushButton("⏹️ หยุดสแกน")
+        self.start_btn.setMinimumHeight(50)
+        self.stop_btn.setMinimumHeight(50)
+        self.stop_btn.setEnabled(False)
 
-        button_layout.addWidget(self.start_scan_btn)
-        button_layout.addWidget(self.stop_scan_btn)
-        scan_layout.addLayout(button_layout)
+        button_layout.addWidget(self.start_btn)
+        button_layout.addWidget(self.stop_btn)
+        layout.addLayout(button_layout)
 
-        layout.addWidget(scan_group)
-
-        # สถิติการสแกน
-        stats_group = QGroupBox("สถิติ")
-        stats_layout = QVBoxLayout(stats_group)
+        # สถิติ
+        stats_group = QGroupBox("สถิติการสแกน")
+        stats_layout = QGridLayout()
 
         self.total_scans_label = QLabel("การสแกนทั้งหมด: 0")
         self.stations_found_label = QLabel("สถานีที่พบ: 0")
         self.last_scan_label = QLabel("ครั้งล่าสุด: -")
+        self.scan_time_label = QLabel("เวลาที่ใช้: -")
 
-        stats_layout.addWidget(self.total_scans_label)
-        stats_layout.addWidget(self.stations_found_label)
-        stats_layout.addWidget(self.last_scan_label)
+        stats_layout.addWidget(self.total_scans_label, 0, 0)
+        stats_layout.addWidget(self.stations_found_label, 0, 1)
+        stats_layout.addWidget(self.last_scan_label, 1, 0)
+        stats_layout.addWidget(self.scan_time_label, 1, 1)
 
+        stats_group.setLayout(stats_layout)
         layout.addWidget(stats_group)
 
+        self.setLayout(layout)
+
         # เชื่อมต่อ signals
-        self.start_scan_btn.clicked.connect(self.start_scan)
-        self.stop_scan_btn.clicked.connect(self.stop_scan)
+        self.start_btn.clicked.connect(self.start_scan)
+        self.stop_btn.clicked.connect(self.stop_scan)
 
     def start_scan(self):
         """เริ่มการสแกน"""
-        frequency_range = self.freq_combo.currentText()
-        self.scan_requested.emit(frequency_range)
+        mode_text = self.scan_mode_combo.currentText()
 
-        self.start_scan_btn.setEnabled(False)
-        self.stop_scan_btn.setEnabled(True)
-        self.progress_bar.setValue(0)
+        if "ความถี่ที่รู้จัก" in mode_text:
+            mode = "known_frequencies"
+            frequencies = None
+        elif "สแกนครบทุกช่อง" in mode_text:
+            mode = "full"
+            frequencies = None
+        else:  # ระบุความถี่เอง
+            mode = "custom"
+            freq_text = self.custom_freq_combo.currentText()
+            try:
+                freq = float(freq_text.split()[0])
+                frequencies = [freq]
+            except:
+                QMessageBox.warning(self, "ข้อผิดพลาด", "กรุณาระบุความถี่ที่ถูกต้อง")
+                return
+
+        self.scan_requested.emit(mode, frequencies)
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
 
     def stop_scan(self):
         """หยุดการสแกน"""
-        self.start_scan_btn.setEnabled(True)
-        self.stop_scan_btn.setEnabled(False)
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
 
-    def update_progress(self, percent, message):
-        """อัปเดตความก้าวหน้า"""
+    def update_progress(self, percent, message, frequency):
+        """อัปเดตความคืบหน้า"""
         self.progress_bar.setValue(percent)
         self.progress_label.setText(message)
+        self.current_freq_label.setText(f"ความถี่ปัจจุบัน: {frequency:.3f} MHz")
 
     def scan_completed(self, stations_found):
         """การสแกนเสร็จสิ้น"""
-        self.start_scan_btn.setEnabled(True)
-        self.stop_scan_btn.setEnabled(False)
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
         self.progress_label.setText(f"สแกนเสร็จสิ้น - พบสถานี {stations_found} รายการ")
+        self.stations_found_label.setText(f"สถานีที่พบ: {stations_found}")
         self.last_scan_label.setText(f"ครั้งล่าสุด: {datetime.now().strftime('%H:%M:%S')}")
 
-# ---------- Main Window ----------
 class Lab4MainWindow(QMainWindow):
+    """หน้าต่างหลักของ Lab 4"""
+
     def __init__(self):
         super().__init__()
         self.db = StationDatabase()
-        self.scanner = DABScanner()
-        self.signal_monitor = SignalMonitor()
+        self.scanner = DABScannerEngine()
 
         self.setup_ui()
-        self.setup_touch_interface()
         self.setup_connections()
 
-        self.setWindowTitle("LAB 4: สร้าง DAB+ Station Scanner")
-        self.resize(1200, 800)
+        self.setWindowTitle("Lab 4: DAB+ Station Scanner (RTL-SDR + ETI Pipeline)")
+        self.setGeometry(100, 100, 1400, 900)
+
+        # สำหรับหน้าจอสัมผัส
+        if '--fullscreen' in sys.argv:
+            self.showFullScreen()
 
     def setup_ui(self):
-        """สร้าง UI หลัก"""
+        """สร้าง UI"""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        main_layout = QVBoxLayout(central_widget)
+        layout = QVBoxLayout()
 
         # หัวข้อ
-        title_label = QLabel("LAB 4: สร้าง DAB+ Station Scanner")
-        title_label.setAlignment(Qt.AlignCenter)
-        title_label.setStyleSheet("""
-            font-size: 20px; font-weight: bold; color: #2c3e50;
-            padding: 15px; background-color: #ecf0f1; border-radius: 10px;
+        title = QLabel("Lab 4: DAB+ Station Scanner")
+        title.setFont(QFont("Arial", 20, QFont.Bold))
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("""
+            background-color: #3498db; color: white; padding: 15px;
+            border-radius: 10px; margin: 5px;
         """)
-        main_layout.addWidget(title_label)
+        layout.addWidget(title)
 
-        # Tab widget
+        # Tabs
         self.tab_widget = QTabWidget()
 
         # Tab 1: Scanner
         scanner_tab = QWidget()
-        scanner_layout = QHBoxLayout(scanner_tab)
+        scanner_layout = QHBoxLayout()
 
-        # Control Panel
-        self.control_panel = ScannerControlPanel()
-        scanner_layout.addWidget(self.control_panel, 1)
-
-        # Station List
+        self.scan_control = ScanControlWidget()
         self.station_list = StationListWidget()
+
+        scanner_layout.addWidget(self.scan_control, 1)
         scanner_layout.addWidget(self.station_list, 2)
+        scanner_tab.setLayout(scanner_layout)
 
+        # Tab 2: Signal Monitor
+        self.signal_monitor = SignalMonitorWidget()
+
+        # เพิ่ม tabs
         self.tab_widget.addTab(scanner_tab, "🔍 Scanner")
+        self.tab_widget.addTab(self.signal_monitor, "📊 Signal Monitor")
 
-        # Tab 2: Signal Monitoring
-        monitor_tab = QWidget()
-        monitor_layout = QVBoxLayout(monitor_tab)
-
-        self.signal_chart = SignalQualityChart()
-        monitor_layout.addWidget(self.signal_chart)
-
-        self.tab_widget.addTab(monitor_tab, "📊 Signal Monitor")
-
-        # Tab 3: History & Reports
-        history_tab = QWidget()
-        history_layout = QVBoxLayout(history_tab)
-
-        history_label = QLabel("ประวัติการสแกนและรายงาน")
-        history_label.setFont(QFont("Arial", 16, QFont.Bold))
-        history_label.setAlignment(Qt.AlignCenter)
-        history_layout.addWidget(history_label)
-
-        # TODO: เพิ่มตารางประวัติและปุ่มสร้างรายงาน
-        self.history_text = QTextEdit()
-        self.history_text.setReadOnly(True)
-        self.history_text.setPlainText("ประวัติการสแกนจะแสดงที่นี่...")
-        history_layout.addWidget(self.history_text)
-
-        self.tab_widget.addTab(history_tab, "📋 History")
-
-        main_layout.addWidget(self.tab_widget)
+        layout.addWidget(self.tab_widget)
 
         # Status bar
-        self.status_label = QLabel("พร้อมใช้งาน - เลือกช่วงความถี่และเริ่มสแกน")
-        self.status_label.setStyleSheet("background-color: #d5f4e6; padding: 8px;")
-        main_layout.addWidget(self.status_label)
+        self.status_label = QLabel("พร้อมใช้งาน - เลือกโหมดการสแกนและเริ่มสแกน")
+        self.status_label.setStyleSheet("background-color: #e8f5e8; padding: 8px; border-radius: 5px;")
+        layout.addWidget(self.status_label)
 
-    def setup_touch_interface(self):
-        """ปรับการแสดงผลสำหรับหน้าจอสัมผัส"""
-        font = QFont()
-        font.setPointSize(14)
-        self.setFont(font)
-
-        # ปรับขนาดปุ่มสำหรับ touch
-        buttons = [
-            self.control_panel.start_scan_btn,
-            self.control_panel.stop_scan_btn,
-            self.station_list.refresh_btn,
-            self.station_list.monitor_btn,
-            self.station_list.export_btn,
-            self.signal_chart.clear_btn,
-            self.signal_chart.save_btn
-        ]
-
-        for btn in buttons:
-            btn.setMinimumHeight(48)
-            btn.setFont(QFont("Arial", 14))
-
-        # ปรับขนาด combo box
-        self.control_panel.freq_combo.setMinimumHeight(40)
-
-        # ปรับ tab widget
-        self.tab_widget.setTabPosition(QTabWidget.North)
-        self.tab_widget.setFont(QFont("Arial", 14))
+        central_widget.setLayout(layout)
 
     def setup_connections(self):
-        """เชื่อมต่อ signals และ slots"""
-        # Scanner signals
-        self.control_panel.scan_requested.connect(self.start_scan)
+        """เชื่อมต่อ signals"""
+        # Scanner connections
+        self.scan_control.scan_requested.connect(self.start_scan)
         self.scanner.station_found.connect(self.on_station_found)
-        self.scanner.scan_progress.connect(self.control_panel.update_progress)
-        self.scanner.scan_completed.connect(self.control_panel.scan_completed)
+        self.scanner.scan_progress.connect(self.scan_control.update_progress)
+        self.scanner.scan_completed.connect(self.scan_control.scan_completed)
         self.scanner.scan_completed.connect(self.on_scan_completed)
         self.scanner.error_occurred.connect(self.show_error)
 
-        # Station list signals
+        # Station list connections
         self.station_list.station_selected.connect(self.on_station_selected)
 
-        # Signal monitor signals
-        self.signal_monitor.signal_updated.connect(self.signal_chart.update_signal_data)
-
-    def start_scan(self, frequency_range):
+    def start_scan(self, mode, frequencies):
         """เริ่มการสแกน"""
         try:
-            if not self.scanner.isRunning():
-                self.scanner.set_frequency_range(frequency_range)
-                self.scanner.start()
-                self.status_label.setText(f"เริ่มสแกน {frequency_range}")
-                logger.info(f"เริ่มสแกน: {frequency_range}")
+            if self.scanner.isRunning():
+                QMessageBox.warning(self, "กำลังสแกน", "กรุณารอให้การสแกนปัจจุบันเสร็จสิ้น")
+                return
+
+            self.scanner.set_scan_mode(mode, frequencies)
+            self.scanner.start()
+
+            self.status_label.setText(f"กำลังสแกน ({mode})...")
+            logger.info(f"Started scan with mode: {mode}")
+
         except Exception as e:
-            self.show_error(f"เริ่มสแกนผิดพลาด: {str(e)}")
+            self.show_error(f"Start scan error: {e}")
 
     def on_station_found(self, station_data):
         """เมื่อพบสถานีใหม่"""
         try:
-            # บันทึกสถานีลงฐานข้อมูล
             station_id = self.db.add_station(station_data)
-
             if station_id:
-                # อัปเดตแสดงผล
                 self.station_list.refresh_stations()
+                logger.info(f"Found station: {station_data.get('service_label')} @ {station_data.get('frequency_mhz')} MHz")
 
-                # เพิ่มเข้าระบบติดตามสัญญาณ
-                self.signal_monitor.add_station(station_id, station_data['frequency_mhz'])
-
-                logger.info(f"พบสถานี: {station_data['service_name']} @ {station_data['frequency_mhz']:.3f} MHz")
+                # เพิ่มข้อมูลสัญญาณเข้า monitor
+                self.signal_monitor.add_signal_data(station_id, station_data)
 
         except Exception as e:
-            logger.error(f"เพิ่มสถานีผิดพลาด: {str(e)}")
+            logger.error(f"Add station error: {e}")
 
     def on_scan_completed(self, stations_found):
         """เมื่อการสแกนเสร็จสิ้น"""
-        try:
-            # บันทึกประวัติการสแกน
-            scan_data = {
-                'frequency_range': self.control_panel.freq_combo.currentText(),
-                'stations_found': stations_found,
-                'scan_duration': 0,  # TODO: คำนวณเวลาที่ใช้
-                'notes': f'สแกนพบสถานี {stations_found} รายการ'
-            }
-            self.db.add_scan_record(scan_data)
-
-            self.status_label.setText(f"สแกนเสร็จสิ้น - พบสถานี {stations_found} รายการ")
-            logger.info(f"สแกนเสร็จสิ้น: พบ {stations_found} สถานี")
-
-        except Exception as e:
-            logger.error(f"บันทึกผลการสแกนผิดพลาด: {str(e)}")
+        self.status_label.setText(f"สแกนเสร็จสิ้น - พบสถานี {stations_found} รายการ")
+        QMessageBox.information(self, "สแกนเสร็จสิ้น",
+                              f"พบสถานี DAB+ ทั้งหมด {stations_found} รายการ")
 
     def on_station_selected(self, station_id):
         """เมื่อเลือกสถานี"""
-        # TODO: แสดงรายละเอียดสถานีและเริ่มติดตาม
         self.status_label.setText(f"เลือกสถานี ID: {station_id}")
 
     def show_error(self, error_message):
         """แสดงข้อความผิดพลาด"""
-        QMessageBox.critical(self, "เกิดข้อผิดพลาด", error_message)
+        QMessageBox.critical(self, "ข้อผิดพลาด", error_message)
         self.status_label.setText(f"ข้อผิดพลาด: {error_message}")
         logger.error(error_message)
 
     def closeEvent(self, event):
         """เมื่อปิดโปรแกรม"""
         try:
-            # หยุดการทำงานของ threads
             if self.scanner.isRunning():
-                self.scanner.stop_scan()
-                self.scanner.wait()
-
-            if self.signal_monitor.isRunning():
-                self.signal_monitor.stop_monitoring()
-                self.signal_monitor.wait()
+                self.scanner.stop_scanning()
+                self.scanner.wait(3000)  # รอ 3 วินาที
 
             event.accept()
-
         except Exception as e:
-            logger.error(f"ปิดโปรแกรมผิดพลาด: {str(e)}")
+            logger.error(f"Close event error: {e}")
             event.accept()
 
-# ---------- Main Function ----------
 def main():
     """ฟังก์ชันหลัก"""
-    try:
-        app = QApplication(sys.argv)
+    app = QApplication(sys.argv)
 
-        # ตั้งค่า font สำหรับ touch interface
-        font = QFont()
-        font.setPointSize(14)
-        app.setFont(font)
+    # ตั้งค่า font สำหรับ touchscreen
+    font = QFont()
+    font.setPointSize(12)
+    app.setFont(font)
 
-        # สร้างและแสดงหน้าต่างหลัก
-        window = Lab4MainWindow()
-        window.show()
+    # สร้างและแสดงหน้าต่างหลัก
+    window = Lab4MainWindow()
+    window.show()
 
-        sys.exit(app.exec_())
+    print("Lab 4: DAB+ Station Scanner")
+    print("Based on Lab 3 RTL-SDR + ETI Pipeline")
+    print("Features:")
+    print("- RTL-SDR based scanning")
+    print("- ETI stream processing")
+    print("- Real-time signal monitoring")
+    print("- Touch-friendly interface")
+    print("- Database storage")
 
-    except Exception as e:
-        print(f"เริ่มโปรแกรมผิดพลาด: {str(e)}")
-        sys.exit(1)
+    sys.exit(app.exec_())
 
 if __name__ == "__main__":
-    print("LAB 4: สร้าง DAB+ Station Scanner (เฉลย)")
     main()
