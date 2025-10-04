@@ -1,0 +1,14 @@
+serverAddr = "xxx.xxx.xxx.xxx"  # server ip 
+serverPort = 7000
+auth.method = "token"
+auth.token = "SLQhLg71zaQGe7COjGBQ5IaK9wRkrpAp"
+
+[[proxies]]
+name = "pi1-tcp-1234"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 1234
+remotePort = 6xxx # <ใส่เลขportที่ไม่ซ่ำคนอื่น ช่วง 6001-6100>
+
+## run command เพิ้อเขื่มอต่อ tunnel server
+# frpc -c frpc.toml
