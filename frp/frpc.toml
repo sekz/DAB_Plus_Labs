@@ -4,7 +4,7 @@ auth.method = "token"
 auth.token = "SLQhLg71zaQGe7COjGBQ5IaK9wRkrpAp"
 
 [[proxies]]
-name = "pi1-tcp-1234"
+name = "pi1-tcp-1234" #ตั้งชื่อให้ไม่ซ้ำคนอื่น
 type = "tcp"
 localIP = "127.0.0.1"
 localPort = 1234
