@@ -12,7 +12,7 @@ footer: 'Digital Audio Broadcasting Plus Learning Project'
 <style>
 
 section {
-  font-size: 1.85em;
+  font-size: 1.75em;
   padding: 2em;
 }
 section table { font-size: 16px; }
@@ -34,7 +34,7 @@ li, p, td {
   gap: 1rem;
 }
 code {
-    font-size: 10px;
+    font-size: 9px;
 }
 pre {
     font-size: 14px;
@@ -144,8 +144,8 @@ pre {
 
 ---
 
-# 🎓 LAB 0: Introduction to DAB+, Python และ PyQt5
-## 🕒 เวลารวม: 75 นาที (1 ชั่วโมง 15 นาที)
+# 🎓 LAB 0: Introduction to DAB+, Python, FRP และ PyQt5
+## 🕒 เวลารวม: 105 นาที (1 ชั่วโมง 45 นาที)
 
 ### 📋 ภาพรวมเนื้อหา
 **เป็นแล็บพื้นฐานสำหรับมือใหม่** ที่ยังไม่เคยใช้ Python หรือไม่รู้จัก DAB+
@@ -276,7 +276,169 @@ except ImportError:
 
 ---
 
-# 🖥️ ส่วนที่ 3: PyQt5 Hands-on (30 นาที)
+# 🌐 ส่วนที่ 3: FRP Client Setup (30 นาที)
+
+<div class="columns">
+<div>
+
+## 🔌 FRP คืออะไร?
+**Fast Reverse Proxy** - เครื่องมือสำหรับเข้าถึง RPI จากภายนอก
+
+**ปัญหาที่แก้:**
+- RPI อยู่หลัง NAT/Router
+- IP บ้านเปลี่ยนบ่อย
+- ไม่สามารถเปิด port forward
+- ต้องการเชื่อมต่อจาก Colab
+
+**การทำงาน:**
+```
+[RPI:1234] → [FRP Client] → Internet
+→ [FRP Server:600x] ← [Colab/Client]
+```
+
+</div>
+<div>
+
+## 🛠️ ติดตั้ง FRP Client
+```bash
+# ตรวจสอบ architecture
+uname -m  # aarch64 = ARM64
+
+# ดาวน์โหลด FRP
+wget https://github.com/fatedier/frp/\
+releases/download/v0.61.0/\
+frp_0.61.0_linux_arm64.tar.gz
+
+# แตกไฟล์และติดตั้ง
+tar -xzf frp_*.tar.gz
+cd frp_*
+sudo cp frpc /usr/local/bin/
+sudo chmod +x /usr/local/bin/frpc
+
+# ตรวจสอบ
+frpc --version
+```
+
+</div>
+</div>
+
+---
+
+# 🌐 FRP: การตั้งค่าและทดสอบ
+
+<div class="columns">
+<div>
+
+## 📝 สร้าง Config File
+```bash
+sudo mkdir -p /etc/frp
+sudo nano /etc/frp/frpc.toml
+```
+
+**เนื้อหาไฟล์** (เปลี่ยน XX = เลขที่นั่ง):
+```toml
+serverAddr = "xxx.xxx.xxx.xxx"
+serverPort = 7000
+auth.method = "token"
+auth.token = "YourToken"
+
+[[proxies]]
+name = "piXX-tcp-1234"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 1234
+remotePort = 60XX
+```
+
+</div>
+<div>
+
+## ⚙️ ตั้งค่า Systemd Service
+```bash
+# สร้างไฟล์ service
+sudo nano /etc/systemd/system/frpc.service
+```
+
+```ini
+[Unit]
+Description=FRP Client Service
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+Restart=on-failure
+ExecStart=/usr/local/bin/frpc \
+  -c /etc/frp/frpc.toml
+
+[Install]
+WantedBy=multi-user.target
+```
+
+</div>
+</div>
+
+---
+
+# 🌐 FRP: เปิดใช้งานและทดสอบ
+
+<div class="columns">
+<div>
+
+## 🚀 เริ่มต้น FRP Service
+```bash
+# โหลด config
+sudo systemctl daemon-reload
+
+# เปิดใช้งานอัตโนมัติ
+sudo systemctl enable frpc
+
+# เริ่มต้น service
+sudo systemctl start frpc
+
+# ตรวจสอบสถานะ
+sudo systemctl status frpc
+# ต้องเห็น: "start proxy success"
+
+# ดู log
+sudo journalctl -u frpc -f
+```
+
+</div>
+<div>
+
+## ✅ ทดสอบจาก Google Colab
+```python
+import socket
+
+# ใส่ข้อมูลของคุณ
+FRP_SERVER = "xxx.xxx.xxx.xxx"
+FRP_PORT = 60XX  # เช่น 6001
+
+sock = socket.socket(
+    socket.AF_INET,
+    socket.SOCK_STREAM
+)
+sock.settimeout(5)
+result = sock.connect_ex(
+    (FRP_SERVER, FRP_PORT)
+)
+
+if result == 0:
+    print("✅ เชื่อมต่อสำเร็จ!")
+else:
+    print("❌ ไม่สามารถเชื่อมต่อ")
+sock.close()
+```
+
+</div>
+</div>
+
+**🎯 ผลลัพธ์**: เข้าถึง RPI จากภายนอกได้ผ่าน FRP tunnel
+
+---
+
+# 🖥️ ส่วนที่ 4: PyQt5 Hands-on (30 นาที)
 
 <div class="columns">
 <div>
@@ -428,6 +590,11 @@ class SignalMonitor(QWidget):
 - File handling และ modules
 - GPIO programming พื้นฐาน
 
+**FRP Remote Access:**
+- ติดตั้ง FRP Client
+- ตั้งค่า systemd service
+- Remote tunneling concepts
+
 </div>
 <div>
 
@@ -437,6 +604,11 @@ class SignalMonitor(QWidget):
 - Signals & Slots system
 - Touch-friendly UI design
 - Real-time updates ด้วย QTimer
+
+**Network & Remote:**
+- FRP tunnel management
+- Remote access จาก Colab
+- Service troubleshooting
 
 **เตรียมพร้อม** สำหรับ Labs ขั้นสูง!
 
@@ -509,6 +681,184 @@ rtl_test -t
 
 ### **Trap 1.3: PPM Calibration Analysis**
 หลัง `rtl_test -t` ให้วิเคราะห์ PPM error และอธิบายความหมาย
+
+---
+
+# 🌐 LAB 1 Extended: rtl_tcp Server (15 นาที)
+
+<div class="columns">
+<div>
+
+## 🖥️ การรัน rtl_tcp Server
+```bash
+# เริ่มต้น rtl_tcp server
+rtl_tcp -a 0.0.0.0 -p 1234 -d 0
+
+# ตรวจสอบว่า server ทำงาน
+netstat -an | grep 1234
+
+# ควรเห็น: tcp  0.0.0.0:1234  LISTEN
+```
+
+**Parameters:**
+- `-a 0.0.0.0` รับ connection จากทุก IP
+- `-p 1234` ใช้ port 1234
+- `-d 0` เลือก RTL-SDR device 0
+
+</div>
+<div>
+
+## 📡 rtl_tcp Protocol Commands
+```python
+# Command format: 1 byte + 4 bytes (big endian)
+import struct
+
+# 0x01: Set frequency (Hz)
+freq_cmd = struct.pack('>BI', 0x01, 185360000)
+
+# 0x02: Set sample rate (Hz)
+rate_cmd = struct.pack('>BI', 0x02, 2048000)
+
+# 0x03: Set gain mode (0=auto, 1=manual)
+mode_cmd = struct.pack('>BI', 0x03, 1)
+
+# 0x04: Set gain (tenths of dB)
+gain_cmd = struct.pack('>BI', 0x04, 200)  # 20.0 dB
+
+# 0x05: Set frequency correction (ppm)
+ppm_cmd = struct.pack('>BI', 0x05, 0)
+```
+
+</div>
+</div>
+
+---
+
+# 🌐 LAB 1: Python rtl_tcp Client Example
+
+<div class="columns">
+<div>
+
+## 🔌 Network Connection
+```python
+import socket
+import struct
+import numpy as np
+
+# เชื่อมต่อ rtl_tcp server
+sock = socket.socket(
+    socket.AF_INET,
+    socket.SOCK_STREAM
+)
+sock.connect(('localhost', 1234))
+
+# ตั้งค่าความถี่ DAB+ Thailand
+freq = 185360000  # 185.360 MHz
+cmd = struct.pack('>BI', 0x01, freq)
+sock.send(cmd)
+
+# ตั้งค่า sample rate
+rate = 2048000    # 2.048 MHz
+cmd = struct.pack('>BI', 0x02, rate)
+sock.send(cmd)
+```
+
+</div>
+<div>
+
+## 📊 รับ I/Q Samples
+```python
+# รับข้อมูล I/Q (8192 bytes = 4096 samples)
+data = sock.recv(8192)
+
+# แปลง uint8 → float → complex
+iq_uint8 = np.frombuffer(data, dtype=np.uint8)
+iq_float = (iq_uint8 - 127.5) / 127.5
+
+# แยก I และ Q
+i_samples = iq_float[::2]
+q_samples = iq_float[1::2]
+samples = i_samples + 1j * q_samples
+
+print(f"Received {len(samples)} complex samples")
+
+# ปิดการเชื่อมต่อ
+sock.close()
+```
+
+**ข้อดี rtl_tcp:**
+- Remote access ผ่าน network
+- ใช้กับ FRP tunnel ได้
+- เหมาะสำหรับ Google Colab
+
+</div>
+</div>
+
+---
+
+# 🌐 LAB 1: ใช้งานผ่าน FRP Tunnel
+
+<div class="columns">
+<div>
+
+## 🔄 Architecture
+```
+[Colab/Client]
+    ↓
+[Internet]
+    ↓
+[FRP Server:600X]
+    ↓
+[FRP Client on RPI]
+    ↓
+[rtl_tcp:1234 on RPI]
+    ↓
+[RTL-SDR Hardware]
+```
+
+**การตั้งค่า FRP:**
+```toml
+[[proxies]]
+name = "piXX-tcp-1234"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 1234
+remotePort = 60XX
+```
+
+</div>
+<div>
+
+## ✅ ทดสอบจาก Colab
+```python
+# ใน Google Colab
+import socket
+import struct
+
+FRP_SERVER = "xxx.xxx.xxx.xxx"
+FRP_PORT = 60XX  # remote port
+
+# เชื่อมต่อผ่าน FRP
+sock = socket.socket(
+    socket.AF_INET,
+    socket.SOCK_STREAM
+)
+sock.connect((FRP_SERVER, FRP_PORT))
+
+# ตั้งค่า RTL-SDR ผ่าน network
+freq = 185360000
+cmd = struct.pack('>BI', 0x01, freq)
+sock.send(cmd)
+
+# รับ I/Q data จากระยะไกล
+data = sock.recv(8192)
+print(f"Received {len(data)} bytes via FRP")
+```
+
+</div>
+</div>
+
+**🎯 ผลลัพธ์**: สามารถควบคุม RTL-SDR จาก Colab ผ่าน FRP tunnel
 
 ---
 
@@ -664,13 +1014,11 @@ class ETIProcessor:
         self.eti_cmdline_path = "/usr/local/bin/eti-cmdline"
         self.eti_queue = Queue()
         self.sync_status = False
-
     def start_eti_processing(self):
         # TODO: เริ่ม eti-cmdline subprocess
         # TODO: ส่ง I/Q data เข้า stdin
         # TODO: รับ ETI frames จาก stdout
         pass
-
     def parse_eti_frame(self, eti_data):
         # TODO: แยก ETI frame (6144 bytes)
         # TODO: ตรวจสอบ sync pattern
@@ -690,13 +1038,10 @@ class SignalQualityMonitor:
         self.sync_rate = 0.0
         self.error_count = 0
         self.frame_count = 0
-
     def update_quality_metrics(self, frame):
         # TODO: คำนวณ sync success rate
-        # TODO: ติดตาม error statistics
-        # TODO: แสดงผล real-time status
+        # TODO: ติดตาม error statistics และ TODO: แสดงผล real-time status
         pass
-
     def display_status(self):
         # TODO: แสดง sync status ทุก 1 วินาที
         # TODO: แสดง error rate percentage
@@ -705,10 +1050,11 @@ class SignalQualityMonitor:
 ```
 **ผลลัพธ์**: มี metrics แสดงคุณภาพสัญญาณและความเสถียรของการรับสัญญาณ
 
+**🎯 ผลลัพธ์ Phase 2**: ETI stream generation, sync monitoring, error tracking
+
 </div>
 </div>
 
-**🎯 ผลลัพธ์ Phase 2**: ETI stream generation, sync monitoring, error tracking
 
 ---
 
@@ -726,13 +1072,11 @@ class FICParser:
         self.ensemble_info = {}
         self.services = {}
         self.subchannels = {}
-
     def parse_fic_data(self, fic_bytes):
         # TODO: แยก FIG (Fast Information Group)
         # TODO: ดึง ensemble information
         # TODO: แยก service list
         pass
-
     def decode_fig_types(self, fig_data):
         # TODO: FIG 0/0 - Basic ensemble info
         # TODO: FIG 0/1 - Basic subchannel info
@@ -754,7 +1098,6 @@ class ServiceExtractor:
         # TODO: จับคู่ service กับ subchannel
         # TODO: ดึง audio parameters
         pass
-
     def export_service_list(self):
         # TODO: บันทึกเป็น JSON format
         # TODO: ใส่ข้อมูล service labels
@@ -772,11 +1115,11 @@ class ServiceExtractor:
         }
 ```
 **ผลลัพธ์**: ไฟล์ service_list.json และ subchannel_info.json สำหรับ audio decoding
-
-</div>
-</div>
-
 **🎯 ผลลัพธ์ Phase 3**: service_list.json, subchannel_info.json, ensemble metadata
+
+</div>
+</div>
+
 
 ---
 
@@ -801,13 +1144,11 @@ class DABAudioDecoder:
         self.pyaudio_instance = pyaudio.PyAudio()
         self.stream = None
         self.current_service = None
-
     def extract_audio_frames(self, msc_data):
         # TODO: แยก audio super frames
         # TODO: ส่งข้อมูลไป ffmpeg decode
         # TODO: ได้ raw PCM audio
         pass
-
     def setup_audio_output(self):
         # TODO: ตั้งค่า PyAudio stream
         # TODO: รองรับ 3.5mm jack output
@@ -826,19 +1167,16 @@ class DABMetadataProcessor:
     def __init__(self):
         self.current_dls = ""
         self.slideshow_images = []
-
     def process_dls_data(self, dls_bytes):
         # TODO: แยก Dynamic Label Segment
         # TODO: รวม segments เป็น text
         # TODO: แสดง song title, artist
         pass
-
     def process_mot_slideshow(self, mot_data):
         # TODO: แยก MOT (Multimedia Object Transfer)
         # TODO: ประกอบ JPEG/PNG images
         # TODO: บันทึกรูปภาพ slideshow
         pass
-
     def display_now_playing(self):
         # TODO: แสดง current track info
         # TODO: แสดง slideshow image
@@ -846,10 +1184,11 @@ class DABMetadataProcessor:
 ```
 **ผลลัพธ์**: แสดงชื่อเพลง, ศิลปิน และ slideshow images แบบ real-time
 
+**🎯 ผลลัพธ์ Phase 4**: Working audio player, DLS text, slideshow images
+
 </div>
 </div>
 
-**🎯 ผลลัพธ์ Phase 4**: Working audio player, DLS text, slideshow images
 
 ---
 
@@ -873,13 +1212,11 @@ class DABPlusGUI(QMainWindow):
         self.setFixedSize(800, 480)  # 7" screen
         self.setup_dark_theme()
         self.setup_main_interface()
-
     def setup_main_interface(self):
         # TODO: สร้าง tabbed interface
         # TODO: Spectrum tab, Services tab, Player tab
         # TODO: Settings tab สำหรับ RTL-SDR
         pass
-
     def setup_spectrum_analyzer(self):
         # TODO: Real-time spectrum plot
         # TODO: Waterfall display
@@ -916,10 +1253,245 @@ class DABPlayerController:
 ```
 **ผลลัพธ์**: DAB+ receiver application ที่ทำงานครบวงจรตั้งแต่ RF จนถึงเสียง
 
+**🎯 ผลลัพธ์ Phase 5**: Complete DAB+ receiver GUI application
+
 </div>
 </div>
 
-**🎯 ผลลัพธ์ Phase 5**: Complete DAB+ receiver GUI application
+
+---
+
+# 🌐 Lab 3: Google Colab Version (สำหรับเรียนรู้ทางไกล)
+
+<div class="columns">
+<div>
+
+## 📚 ทำไมต้องมี Colab Version?
+**ปัญหา**:
+- ไม่มี Raspberry Pi
+- ไม่มี RTL-SDR
+- อยากเรียนรู้ทางไกล
+- ทดลองโค้ดก่อนติดตั้ง
+
+**วิธีแก้**:
+- ใช้ FRP tunnel เข้าถึง RPI
+- เขียนโค้ดใน Google Colab
+- ทดสอบ algorithm ได้ทันที
+- Visualization พร้อมใช้
+
+</div>
+<div>
+
+## 🔄 Architecture
+```
+[Google Colab Notebook]
+    ↓ Python code + visualization
+[rtl_tcp client via FRP]
+    ↓ network connection
+[FRP Server:600X]
+    ↓ internet tunnel
+[RPI + FRP Client]
+    ↓ local connection
+[rtl_tcp:1234]
+    ↓ USB
+[RTL-SDR Hardware]
+```
+
+**ข้อดี**:
+- เรียนได้ทุกที่
+- ไม่ต้องติดตั้งอะไร
+- Share notebook ง่าย
+
+</div>
+</div>
+
+---
+
+# 🌐 Lab 3 Colab: Phase 1 - I/Q Acquisition
+
+<div class="columns">
+<div>
+
+## 📓 Lab3_Phase1_IQ_Acquisition_Colab.ipynb
+**Features:**
+- RTLTCPClient class ครบถ้วน
+- FRP connection testing
+- I/Q sample acquisition
+- Real-time monitoring
+
+```python
+# Cell 1: Setup
+!pip install numpy matplotlib scipy
+
+# Cell 2: RTLTCPClient
+class RTLTCPClient:
+    def __init__(self, host, port):
+        self.host = host
+        self.port = port
+        self.sock = None
+
+    def connect(self):
+        self.sock = socket.socket(
+            socket.AF_INET,
+            socket.SOCK_STREAM
+        )
+        self.sock.connect(
+            (self.host, self.port)
+        )
+```
+
+</div>
+<div>
+
+## 📊 Spectrum Analysis
+```python
+# Cell 3: Acquire Samples
+client = RTLTCPClient(
+    'frp_server_ip',
+    60XX
+)
+client.connect()
+client.set_frequency(185360000)
+client.set_sample_rate(2048000)
+
+samples = client.read_samples(1024*1024)
+
+# Cell 4: FFT Analysis
+fft_data = np.fft.fft(samples)
+freqs = np.fft.fftfreq(
+    len(samples),
+    1/2048000
+)
+psd = 20*np.log10(np.abs(fft_data))
+
+plt.plot(freqs/1e6, psd)
+plt.xlabel('Frequency (MHz)')
+plt.ylabel('Power (dB)')
+plt.show()
+```
+
+**ผลลัพธ์**: spectrum plot, I/Q data
+
+</div>
+</div>
+
+---
+
+# 🌐 Lab 3 Colab: Phase 2 - ETI Processing
+
+<div class="columns">
+<div>
+
+## 📓 Lab3_Phase2_ETI_Processing_Colab.ipynb
+**Features:**
+- ETIFrameParser class
+- Simulated ETI frames
+- Sync pattern detection
+- FIC data extraction
+
+```python
+# Cell 1: ETI Frame Parser
+class ETIFrameParser:
+    FRAME_SIZE = 6144
+    FSYNC_PATTERN = 0x073AB6
+
+    def parse_header(self, frame_bytes):
+        # Parse ERR, FSYNC, LIDATA
+        fsync = (frame_bytes[4] << 16) | \
+                (frame_bytes[5] << 8) | \
+                 frame_bytes[6]
+
+        return {
+            'fsync_valid':
+                fsync == self.FSYNC_PATTERN,
+            'fc': frame_bytes[7]
+        }
+```
+
+</div>
+<div>
+
+## 🔍 Simulated ETI for Learning
+```python
+# Cell 2: Generate Simulated ETI
+def generate_simulated_eti():
+    frame = bytearray(6144)
+
+    # ERR (byte 0-3)
+    frame[0:4] = b'\x00\x00\x00\x00'
+
+    # FSYNC (byte 4-6)
+    frame[4] = 0x07
+    frame[5] = 0x3A
+    frame[6] = 0xB6
+
+    # FC (byte 7)
+    frame[7] = 0x00
+
+    # FIC (96 bytes)
+    # MSC (rest of frame)
+
+    return bytes(frame)
+
+# Test parsing
+parser = ETIFrameParser()
+frame = generate_simulated_eti()
+header = parser.parse_header(frame)
+print(f"Valid: {header['fsync_valid']}")
+```
+
+</div>
+</div>
+
+---
+
+# 🌐 Lab 3 Colab: ข้อจำกัดและข้อดี
+
+<div class="columns">
+<div>
+
+## ⚠️ ข้อจำกัด
+**Network:**
+- Latency จาก internet
+- Bandwidth สำหรับ I/Q streaming
+- FRP tunnel stability
+
+**Processing:**
+- ไม่มี eti-cmdline บน Colab
+- ไม่มี native DAB+ tools
+- ต้องใช้ simulated data บางส่วน
+
+**Hardware:**
+- ไม่สามารถเข้าถึง GPIO
+- ไม่มี audio output ตรง
+- ต้องพึ่งพา RPI ระยะไกล
+
+</div>
+<div>
+
+## ✅ ข้อดี
+**Learning:**
+- เรียนรู้ concepts ได้ดี
+- ทดสอบ algorithm ง่าย
+- Visualization สวยงาม
+- Share code ได้ทันที
+
+**Development:**
+- Prototype รวดเร็ว
+- Debug ง่าย
+- Version control ผ่าน Colab
+- Collaborate ได้
+
+**Accessibility:**
+- เรียนได้ทุกที่ทุกเวลา
+- ไม่ต้องลงทุน hardware
+- เหมาะกับ workshop
+- Remote teaching ready
+
+</div>
+</div>
+
+**🎯 สรุป**: Colab version เหมาะสำหรับเรียนรู้ concepts, RPI version เหมาะสำหรับ production
 
 ---
 

@@ -1,4 +1,4 @@
-# LAB 0: Introduction to DAB+, Python และ PyQt5
+# LAB 0: Introduction to DAB+, Python, FRP และ PyQt5
 
 ## ส่วนที่ 1: Introduction to DAB+ (15 นาที)
 
@@ -493,7 +493,171 @@ except Exception as e:
 
 ---
 
-## ส่วนที่ 3: Introduction to PyQt5 (30 นาที)
+## ส่วนที่ 3: การใช้งาน FRP Client (30 นาที)
+
+### FRP คืออะไร?
+
+**FRP (Fast Reverse Proxy)** เป็นเครื่องมือที่ช่วยให้เข้าถึง service บน Raspberry Pi ที่อยู่หลัง router/NAT ได้จากอินเทอร์เน็ต โดยไม่ต้องเปิด port ที่ router
+
+#### การทำงานของ FRP:
+
+```
+[RPI Service:1234] ---> [FRP Client] ---> Internet ---> [FRP Server:600x] <--- [Client ภายนอก]
+```
+
+**ทำไมต้องใช้ FRP?**
+- RPI อยู่หลัง NAT/router ไม่มี public IP
+- IP บ้านเปลี่ยนบ่อย
+- ไม่สามารถเข้าถึง router เพื่อเปิด port
+- ต้องการเข้าถึง DAB+ streaming จาก Google Colab
+
+### การติดตั้ง FRP Client
+
+#### 1. ตรวจสอบ CPU Architecture:
+```bash
+uname -m
+# aarch64 → ใช้ ARM64
+# armv7l → ใช้ ARM
+```
+
+#### 2. ดาวน์โหลดและติดตั้ง (ARM64):
+```bash
+# ดาวน์โหลด
+wget https://github.com/fatedier/frp/releases/download/v0.61.0/frp_0.61.0_linux_arm64.tar.gz
+
+# แตกไฟล์
+tar -xzf frp_0.61.0_linux_arm64.tar.gz
+cd frp_0.61.0_linux_arm64
+
+# ติดตั้ง
+sudo cp frpc /usr/local/bin/
+sudo chmod +x /usr/local/bin/frpc
+
+# ตรวจสอบ
+frpc --version
+```
+
+#### 3. สร้างไฟล์ Config:
+```bash
+sudo mkdir -p /etc/frp
+sudo nano /etc/frp/frpc.toml
+```
+
+**เนื้อหาไฟล์ (เปลี่ยน XX เป็นเลขที่นั่งของคุณ)**:
+```toml
+# FRP Server Information
+serverAddr = "xxx.xxx.xxx.xxx"
+serverPort = 7000
+auth.method = "token"
+auth.token = "YourTokenFromInstructor"
+
+# Proxy Configuration
+[[proxies]]
+name = "piXX-tcp-1234"          # เช่น pi01, pi02
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 1234
+remotePort = 60XX               # เช่น 6001, 6002
+```
+
+#### 4. ทดสอบรัน:
+```bash
+# รันแบบ manual
+frpc -c /etc/frp/frpc.toml
+
+# ต้องเห็น: "start proxy success"
+# กด Ctrl+C เพื่อหยุด
+```
+
+#### 5. ตั้งค่า Systemd Service:
+```bash
+# สร้างไฟล์ service
+sudo nano /etc/systemd/system/frpc.service
+```
+
+**เนื้อหาไฟล์**:
+```ini
+[Unit]
+Description=FRP Client Service
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+Restart=on-failure
+RestartSec=10
+ExecStart=/usr/local/bin/frpc -c /etc/frp/frpc.toml
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**เปิดใช้งาน**:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable frpc
+sudo systemctl start frpc
+sudo systemctl status frpc
+```
+
+### การทดสอบ FRP
+
+#### จาก Google Colab:
+```python
+import socket
+
+FRP_SERVER = "xxx.xxx.xxx.xxx"
+FRP_PORT = 60XX  # remote port ของคุณ
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.settimeout(5)
+result = sock.connect_ex((FRP_SERVER, FRP_PORT))
+
+if result == 0:
+    print(f"✅ เชื่อมต่อสำเร็จ Port {FRP_PORT}")
+else:
+    print(f"❌ ไม่สามารถเชื่อมต่อ Port {FRP_PORT}")
+sock.close()
+```
+
+### คำสั่งที่มีประโยชน์:
+```bash
+# ดูสถานะ
+sudo systemctl status frpc
+
+# ดู log
+sudo journalctl -u frpc -f
+
+# รีสตาร์ท
+sudo systemctl restart frpc
+
+# แก้ไข config
+sudo nano /etc/frp/frpc.toml
+sudo systemctl restart frpc
+```
+
+### Troubleshooting:
+
+**ปัญหา: login failed**
+```bash
+# ตรวจสอบ config
+cat /etc/frp/frpc.toml | grep -E "serverAddr|serverPort|token"
+
+# ทดสอบ connection
+ping -c 4 [SERVER_IP]
+```
+
+**ปัญหา: port already used**
+```bash
+# แก้ไข config ใช้ port อื่น
+sudo nano /etc/frp/frpc.toml
+# เปลี่ยน remotePort และ name
+sudo systemctl restart frpc
+```
+
+---
+
+## ส่วนที่ 4: Introduction to PyQt5 (30 นาที)
 
 ### PyQt5 คืออะไร?
 
@@ -700,6 +864,13 @@ button.setStyleSheet("""
 - **เทคโนโลยีที่เกี่ยวข้อง**: RTL-SDR, welle.io, Software Defined Radio
 - **การประยุกต์ใช้**: การรับสัญญาณ, การถอดรหัส, การแสดงผล
 
+#### FRP Client:
+- **การติดตั้ง**: ดาวน์โหลดและติดตั้ง FRP Client บน ARM architecture
+- **การตั้งค่า**: สร้างและจัดการ configuration file
+- **Systemd Service**: ตั้งค่า service สำหรับรันอัตโนมัติ
+- **การทดสอบ**: ทดสอบ connection และ troubleshooting
+- **Remote Access**: เข้าถึง RPI จากภายนอกผ่าน FRP tunnel
+
 #### PyQt5 GUI Programming:
 - **พื้นฐาน**: Application, Window, Widget concepts
 - **Widgets หลัก**: Label, Button, TextEdit, Slider, ProgressBar
@@ -715,6 +886,13 @@ button.setStyleSheet("""
 - **PyQt5** สำหรับสร้าง GUI applications
 - **pip package management** สำหรับติดตั้ง libraries
 - **File handling** และ data processing
+- **FRP Client** สำหรับ remote access และ tunneling
+
+#### Network & Remote Access:
+- **FRP Tunneling** เข้าถึง RPI จากภายนอก
+- **Systemd Service Management** จัดการ background services
+- **Network Troubleshooting** debug connection issues
+- **Remote Streaming** เชื่อมต่อจาก Google Colab
 
 #### Hardware Integration:
 - **Raspberry Pi GPIO** การควบคุม hardware

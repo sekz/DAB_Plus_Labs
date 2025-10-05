@@ -4,9 +4,11 @@
 
 ## 📋 รายการแล็บทั้งหมด
 
-### Lab 0: Introduction to DAB+ และ PyQt5 (เตรียมพร้อม)
+### Lab 0: Introduction to DAB+, Python, FRP และ PyQt5 (เตรียมพร้อม)
 - แนะนำเทคโนโลยี DAB+ และข้อดีเมื่อเทียบกับ FM
-- เรียนรู้พื้นฐาน PyQt5 GUI programming ใน 1 ชั่วโมง
+- เรียนรู้พื้นฐาน Python programming สำหรับมือใหม่
+- ติดตั้งและใช้งาน FRP Client สำหรับเข้าถึง RTL-SDR ระยะไกล
+- เรียนรู้พื้นฐาน PyQt5 GUI programming
 - การสร้าง Touch-Friendly UI สำหรับหน้าจอสัมผัส 7"
 - ความรู้เบื้องต้นเกี่ยวกับ RTL-SDR และ welle.io
 
@@ -210,7 +212,7 @@ export DISPLAY=:0.0
 
 # 📚 เนื้อหาครบถ้วนของแต่ละ LAB
 
-## 🎓 LAB 0: Introduction to DAB+, Python และ PyQt5
+## 🎓 LAB 0: Introduction to DAB+, Python, FRP และ PyQt5
 
 ### ส่วนที่ 1: Introduction to DAB+ (15 นาที)
 
@@ -265,7 +267,81 @@ class DABStation:
         return f"{self.name} - {self.frequency} MHz"
 ```
 
-### ส่วนที่ 3: PyQt5 GUI Programming (30 นาที)
+### ส่วนที่ 3: FRP Client สำหรับการเข้าถึง RTL-SDR ระยะไกล (30 นาที)
+
+#### FRP (Fast Reverse Proxy) คืออะไร?
+FRP เป็นเครื่องมือ reverse proxy ที่ช่วยให้เข้าถึง Raspberry Pi จากภายนอกผ่านอินเทอร์เน็ตได้ โดยไม่ต้องตั้งค่า Port Forwarding บน Router
+
+#### การติดตั้ง FRP Client บน Raspberry Pi
+```bash
+# ดาวน์โหลด FRP สำหรับ ARM64
+wget https://github.com/fatedier/frp/releases/download/v0.61.1/frp_0.61.1_linux_arm64.tar.gz
+tar -xzvf frp_0.61.1_linux_arm64.tar.gz
+cd frp_0.61.1_linux_arm64
+
+# สำหรับ ARMv7 (32-bit)
+wget https://github.com/fatedier/frp/releases/download/v0.61.1/frp_0.61.1_linux_arm.tar.gz
+```
+
+#### ตัวอย่าง Configuration (frpc.toml)
+```toml
+serverAddr = "xxx.xxx.xxx.xxx"
+serverPort = 7000
+auth.method = "token"
+auth.token = "your_secret_token"
+
+[[proxies]]
+name = "piXX-tcp-1234"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 1234
+remotePort = 60XX
+```
+
+#### ติดตั้งเป็น Systemd Service
+```bash
+# สร้าง service file
+sudo nano /etc/systemd/system/frpc.service
+
+# เนื้อหาใน service file:
+[Unit]
+Description=FRP Client
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/home/pi/frp/frpc -c /home/pi/frp/frpc.toml
+Restart=always
+User=pi
+
+[Install]
+WantedBy=multi-user.target
+
+# เปิดใช้งาน
+sudo systemctl enable frpc
+sudo systemctl start frpc
+```
+
+#### การทดสอบจาก Google Colab
+```python
+import socket
+import struct
+
+# เชื่อมต่อไปยัง rtl_tcp ผ่าน FRP tunnel
+server_ip = "xxx.xxx.xxx.xxx"  # FRP server IP
+server_port = 60XX              # Remote port
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.connect((server_ip, server_port))
+print(f"Connected to RTL-SDR via FRP tunnel")
+
+# ตั้งค่าความถี่ 185.360 MHz (DAB+ Thailand)
+freq = 185360000
+cmd = struct.pack('>BI', 0x01, freq)
+sock.send(cmd)
+```
+
+### ส่วนที่ 4: PyQt5 GUI Programming (30 นาที)
 
 #### PyQt5 คืออะไร?
 PyQt5 คือไลบรารีสำหรับสร้าง GUI (Graphical User Interface) ด้วย Python
@@ -354,12 +430,21 @@ rtl_test -t
 rtl_test -s 2048000
 ```
 
-### ตัวอย่างโค้ด Python สำหรับทดสอบ RTL-SDR
+### การรัน rtl_tcp Server
+```bash
+# เริ่ม rtl_tcp server สำหรับ remote access
+rtl_tcp -a 0.0.0.0 -p 1234 -d 0
+
+# ตรวจสอบ server ทำงาน
+netstat -an | grep 1234
+```
+
+### ตัวอย่างโค้ด Python สำหรับทดสอบ RTL-SDR (Direct Access)
 ```python
 from rtlsdr import RtlSdr
 import numpy as np
 
-# เชื่อมต่อ RTL-SDR
+# เชื่อมต่อ RTL-SDR โดยตรง
 sdr = RtlSdr()
 sdr.sample_rate = 2.4e6
 sdr.center_freq = 202.928e6  # DAB+ frequency
@@ -373,6 +458,46 @@ fft_data = np.fft.fft(samples)
 power = 20 * np.log10(np.abs(fft_data))
 
 sdr.close()
+```
+
+### ตัวอย่างโค้ด Python สำหรับ rtl_tcp Client (Network Access)
+```python
+import socket
+import struct
+import numpy as np
+
+# เชื่อมต่อไปยัง rtl_tcp server
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.connect(('localhost', 1234))
+
+# ตั้งค่าความถี่ DAB+ Thailand (185.360 MHz)
+freq_hz = 185360000
+cmd = struct.pack('>BI', 0x01, freq_hz)
+sock.send(cmd)
+
+# ตั้งค่า sample rate (2.048 MHz)
+sample_rate = 2048000
+cmd = struct.pack('>BI', 0x02, sample_rate)
+sock.send(cmd)
+
+# รับ I/Q samples (8192 bytes = 4096 complex samples)
+data = sock.recv(8192)
+iq_uint8 = np.frombuffer(data, dtype=np.uint8)
+iq_float = (iq_uint8 - 127.5) / 127.5
+samples = iq_float[::2] + 1j * iq_float[1::2]
+
+print(f"Received {len(samples)} complex samples")
+sock.close()
+```
+
+### rtl_tcp Protocol Commands
+```python
+# Command format: 1 byte command + 4 bytes parameter (big endian)
+# 0x01: Set frequency (Hz)
+# 0x02: Set sample rate (Hz)
+# 0x03: Set gain mode (0=auto, 1=manual)
+# 0x04: Set gain (tenths of dB)
+# 0x05: Set frequency correction (ppm)
 ```
 
 ---
@@ -522,6 +647,60 @@ Lab3_Outputs/
 ├── slideshow_images/            # Phase 4: MOT images
 └── spectrum_analysis.png        # Phase 1-5: Visualizations
 ```
+
+### 🌐 Google Colab Version (สำหรับเรียนรู้ทางไกล)
+
+LAB 3 มี Google Colab notebooks สำหรับผู้ที่ไม่มี Raspberry Pi หรือต้องการเรียนรู้ทางไกลผ่าน FRP tunnel
+
+#### Lab3_Phase1_IQ_Acquisition_Colab.ipynb
+- **RTLTCPClient class**: เชื่อมต่อ rtl_tcp ผ่าน FRP tunnel
+- **I/Q Sample Acquisition**: รับและแปลงข้อมูล uint8 → complex
+- **Spectrum Analysis**: FFT, PSD, constellation diagram
+- **Real-time Monitoring**: signal strength, data rate tracking
+
+```python
+# ตัวอย่างการใช้งานใน Colab
+client = RTLTCPClient(
+    host='frp_server_ip',
+    port=60XX  # FRP remote port
+)
+client.connect()
+client.set_frequency(185360000)  # DAB+ Thailand
+client.set_sample_rate(2048000)
+samples = client.read_samples(num_samples=1024*1024)
+```
+
+#### Lab3_Phase2_ETI_Processing_Colab.ipynb
+- **ETIFrameParser class**: วิเคราะห์ ETI frame structure
+- **Simulated ETI Frames**: สำหรับการเรียนรู้โครงสร้าง
+- **Sync Monitoring**: FSYNC pattern detection
+- **FIC Extraction**: Fast Information Channel data
+
+```python
+# ตัวอย่าง ETI frame parsing
+parser = ETIFrameParser()
+header = parser.parse_header(frame_bytes)
+if header['fsync_valid']:
+    print(f"✓ Valid ETI frame, FC={header['fc']}")
+```
+
+#### Prerequisites สำหรับ Colab Notebooks:
+1. **FRP Client** ติดตั้งบน Raspberry Pi
+2. **rtl_tcp** server รันอยู่บน Raspberry Pi
+3. **FRP Server** เปิด remote port สำหรับ rtl_tcp
+4. **Internet Connection** สำหรับเชื่อมต่อ Colab → FRP → RPI
+
+#### ข้อจำกัดของ Colab Version:
+- **Network Latency**: อาจมีความล่าช้าจากการส่งข้อมูลผ่าน internet
+- **No eti-cmdline**: ไม่สามารถรัน native tools บน Colab ได้
+- **Educational Purpose**: เน้นการเรียนรู้โครงสร้างมากกว่าการทำงานจริง
+- **Simulated Data**: บาง phase ใช้ข้อมูลจำลองสำหรับการศึกษา
+
+#### ข้อดีของ Colab Version:
+- **No Hardware Required**: เรียนได้โดยไม่ต้องมี RTL-SDR
+- **Remote Learning**: เหมาะสำหรับการเรียนรู้ทางไกล
+- **Code Examples**: ตัวอย่างโค้ดที่ชัดเจนและทดสอบง่าย
+- **Visualization Ready**: matplotlib, numpy พร้อมใช้งาน
 
 ---
 
