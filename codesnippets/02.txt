@@ -1,0 +1,26 @@
+import matplotlib.pyplot as plt
+import numpy as np
+
+# ==== ใช้ RTLTCPClient class เดิม ====
+
+sdr = RTLTCPClient(hostname='xxx.xxx.xxx.xxx', port=6xxx) # แก้ ip และ port 
+sdr.connect()
+sdr.set_sample_rate(2.048e6)
+sdr.set_frequency(185.36e6)
+sdr.set_gain_mode(manual=False)
+
+samples = sdr.read_samples(256*1024)
+
+fft_data = np.fft.fftshift(np.fft.fft(samples))
+fft_db = 20*np.log10(np.abs(fft_data) + 1e-10)
+freqs = np.fft.fftshift(np.fft.fftfreq(len(samples), 1/2.048e6))
+
+plt.figure(figsize=(10,4))
+plt.plot(freqs/1e6, fft_db)
+plt.xlabel('Frequency offset (MHz)')
+plt.ylabel('Power (dB)')
+plt.title('Spectrum at 185.36 MHz')
+plt.grid(True)
+plt.show()
+
+sdr.close()

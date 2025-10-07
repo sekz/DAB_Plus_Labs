@@ -1,0 +1,24 @@
+import matplotlib.pyplot as plt
+import numpy as np
+
+# ==== ใช้ RTLTCPClient class เดิม ====
+
+sdr = RTLTCPClient(hostname='xxx.xxx.xxx.xxx', port=6xxx) # แก้ ip และ port 
+sdr.connect()
+sdr.set_sample_rate(2.048e6)
+sdr.set_frequency(185.36e6)
+sdr.set_gain_mode(manual=False)
+
+samples = sdr.read_samples(256*1024)
+
+plt.figure(figsize=(10,4))
+plt.plot(np.real(samples[:1000]), label='I', alpha=0.7)
+plt.plot(np.imag(samples[:1000]), label='Q', alpha=0.7)
+plt.xlabel('Sample')
+plt.ylabel('Amplitude')
+plt.title('Time Domain - IQ Samples')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+sdr.close()
