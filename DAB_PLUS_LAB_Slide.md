@@ -915,6 +915,31 @@ sudo apt install welle.io
 ### 📋 ภาพรวม Lab 3: การพัฒนา DAB+ แบบ Step-by-Step
 **เป็นแล็บหลักที่สอนการสร้าง DAB+ receiver ตั้งแต่ต้นจนจบ**
 
+
+---
+
+# 📡 Lab 3 Hardware DAB Receiver
+
+
+<div style="display: flex;">
+  <img src="img/si4684-chip.png" width="45%" >
+  <img src="img/Si4684-A10.png" width="45%">
+</div>
+
+---
+
+# 📡 Lab 3  Software DAB Receiver
+
+![width:600px](img/welle-io_standard_mode.png)
+
+
+---
+
+# 📡 Lab 3 Hardware vs Software DAB Receiver
+
+![width:920px](img/dab-receiver_overview.svg)
+
+
 ---
 
 # 📡 Lab 3 ภาพรวมของ LAB

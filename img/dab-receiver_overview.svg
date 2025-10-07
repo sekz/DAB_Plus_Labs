@@ -1,0 +1,472 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 1200 800"
+   version="1.1"
+   id="svg127"
+   sodipodi:docname="dab-receiver_overview.svg"
+   inkscape:version="1.2.2 (b0a84865, 2022-12-01)"
+   width="1200"
+   height="800"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview129"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     showgrid="false"
+     inkscape:zoom="0.59"
+     inkscape:cx="600.84746"
+     inkscape:cy="460.16949"
+     inkscape:window-width="1920"
+     inkscape:window-height="1021"
+     inkscape:window-x="0"
+     inkscape:window-y="31"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg127" />
+  <!-- Define styles -->
+  <defs
+     id="defs7">
+    <style
+       id="style2">
+      .title { font-family: Arial, sans-serif; font-size: 24px; font-weight: bold; fill: #2c3e50; }
+      .subtitle { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; fill: #34495e; }
+      .text { font-family: Arial, sans-serif; font-size: 13px; fill: #2c3e50; }
+      .small-text { font-family: Arial, sans-serif; font-size: 11px; fill: #7f8c8d; }
+      .box-hw { fill: #e8f4f8; stroke: #3498db; stroke-width: 2; }
+      .box-sw { fill: #fef5e7; stroke: #f39c12; stroke-width: 2; }
+      .box-component { fill: white; stroke: #95a5a6; stroke-width: 1.5; }
+      .arrow { stroke: #2c3e50; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .label-hw { fill: #3498db; font-weight: bold; }
+      .label-sw { fill: #f39c12; font-weight: bold; }
+    </style>
+    <!-- Arrow marker -->
+    <marker
+       id="arrowhead"
+       markerWidth="10"
+       markerHeight="10"
+       refX="9"
+       refY="3"
+       orient="auto">
+      <polygon
+         points="10,3 0,6 0,0 "
+         fill="#2c3e50"
+         id="polygon4" />
+    </marker>
+  </defs>
+  <!-- Main Title -->
+  <!-- Left Side: Hardware Approach (SI4684) -->
+  <g
+     id="hardware-approach"
+     transform="translate(5.0847505,-45.762712)">
+    <!-- Background box -->
+    <rect
+       x="50"
+       y="90"
+       width="480"
+       height="650"
+       class="box-hw"
+       rx="10"
+       id="rect13" />
+    <!-- Title -->
+    <text
+       x="290"
+       y="120"
+       text-anchor="middle"
+       class="subtitle label-hw"
+       id="text15">🔧 Hardware Approach</text>
+    <text
+       x="290"
+       y="138"
+       text-anchor="middle"
+       class="small-text"
+       id="text17">(SI4684 Chip - Real DAB Receivers)</text>
+    <!-- SI4684 Main Box -->
+    <rect
+       x="80"
+       y="160"
+       width="420"
+       height="350"
+       class="box-component"
+       rx="8"
+       id="rect19" />
+    <text
+       x="290"
+       y="185"
+       text-anchor="middle"
+       class="subtitle"
+       id="text21">SI4684 All-in-One Chip</text>
+    <!-- Internal components -->
+    <rect
+       x="110"
+       y="200"
+       width="360"
+       height="50"
+       fill="#d5f4e6"
+       stroke="#27ae60"
+       stroke-width="1.5"
+       rx="5"
+       id="rect23" />
+    <text
+       x="290"
+       y="230"
+       text-anchor="middle"
+       class="text"
+       id="text25">📡 RF Frontend + ADC</text>
+    <rect
+       x="110"
+       y="265"
+       width="360"
+       height="50"
+       fill="#d5f4e6"
+       stroke="#27ae60"
+       stroke-width="1.5"
+       rx="5"
+       id="rect27" />
+    <text
+       x="290"
+       y="295"
+       text-anchor="middle"
+       class="text"
+       id="text29">🌊 OFDM Demodulation</text>
+    <rect
+       x="110"
+       y="330"
+       width="360"
+       height="50"
+       fill="#d5f4e6"
+       stroke="#27ae60"
+       stroke-width="1.5"
+       rx="5"
+       id="rect31" />
+    <text
+       x="290"
+       y="360"
+       text-anchor="middle"
+       class="text"
+       id="text33">📋 FIC/MSC Decoding</text>
+    <rect
+       x="110"
+       y="395"
+       width="360"
+       height="50"
+       fill="#d5f4e6"
+       stroke="#27ae60"
+       stroke-width="1.5"
+       rx="5"
+       id="rect35" />
+    <text
+       x="290"
+       y="425"
+       text-anchor="middle"
+       class="text"
+       id="text37">🎵 AAC Audio Decoder</text>
+    <text
+       x="290"
+       y="475"
+       text-anchor="middle"
+       class="small-text"
+       style="font-weight:bold;fill:#e74c3c"
+       id="text39">⚫ Black Box - ไม่เห็นการทำงานภายใน</text>
+    <!-- Arrow down -->
+    <line
+       x1="290"
+       y1="520"
+       x2="290"
+       y2="560"
+       class="arrow"
+       id="line41" />
+    <text
+       x="330"
+       y="545"
+       class="small-text"
+       id="text43">I²C/SPI</text>
+    <!-- MCU Box -->
+    <rect
+       x="110"
+       y="570"
+       width="360"
+       height="80"
+       class="box-component"
+       rx="5"
+       id="rect45" />
+    <text
+       x="290"
+       y="595"
+       text-anchor="middle"
+       class="subtitle"
+       id="text47">Microcontroller (ESP32)</text>
+    <text
+       x="290"
+       y="615"
+       text-anchor="middle"
+       class="small-text"
+       id="text49">• Control Commands</text>
+    <text
+       x="290"
+       y="632"
+       text-anchor="middle"
+       class="small-text"
+       id="text51">• Display Management</text>
+    <!-- Pros/Cons -->
+    <text
+       x="80"
+       y="680"
+       class="text"
+       style="fill:#27ae60"
+       id="text53">✅ Fast (100-200ms latency)</text>
+    <text
+       x="80"
+       y="700"
+       class="text"
+       style="fill:#27ae60"
+       id="text55">✅ Low power, stable</text>
+    <text
+       x="80"
+       y="720"
+       class="text"
+       style="fill:#e74c3c"
+       id="text57">❌ ไม่เห็นการทำงาน, ไม่ปรับแต่งได้</text>
+  </g>
+  <!-- Right Side: Software Approach (RTL-SDR) -->
+  <g
+     id="software-approach"
+     transform="translate(5.0847505,-45.762712)">
+    <!-- Background box -->
+    <rect
+       x="570"
+       y="90"
+       width="580"
+       height="650"
+       class="box-sw"
+       rx="10"
+       id="rect60" />
+    <!-- Title -->
+    <text
+       x="860"
+       y="120"
+       text-anchor="middle"
+       class="subtitle label-sw"
+       id="text62">💻 Software Approach</text>
+    <text
+       x="860"
+       y="138"
+       text-anchor="middle"
+       class="small-text"
+       id="text64">(RTL-SDR + LAB 3 Learning Path)</text>
+    <!-- RTL-SDR Box -->
+    <rect
+       x="600"
+       y="160"
+       width="520"
+       height="70"
+       class="box-component"
+       rx="8"
+       id="rect66" />
+    <text
+       x="860"
+       y="185"
+       text-anchor="middle"
+       class="subtitle"
+       id="text68">📻 RTL-SDR Dongle</text>
+    <text
+       x="860"
+       y="205"
+       text-anchor="middle"
+       class="small-text"
+       id="text70">RF Frontend + 8-bit ADC → I/Q Samples (USB)</text>
+    <!-- Arrow -->
+    <line
+       x1="860"
+       y1="240"
+       x2="860"
+       y2="270"
+       class="arrow"
+       id="line72" />
+    <!-- Phase boxes -->
+    <rect
+       x="600"
+       y="280"
+       width="520"
+       height="60"
+       fill="#fff3cd"
+       stroke="#f39c12"
+       stroke-width="1.5"
+       rx="5"
+       id="rect74" />
+    <text
+       x="650"
+       y="305"
+       class="text"
+       style="font-weight:bold"
+       id="text76">Phase 1:</text>
+    <text
+       x="740"
+       y="305"
+       class="text"
+       id="text78">I/Q Acquisition (rtl_tcp)</text>
+    <text
+       x="860"
+       y="322"
+       text-anchor="middle"
+       class="small-text"
+       id="text80">รับ raw RF signal จาก SDR</text>
+    <line
+       x1="860"
+       y1="345"
+       x2="860"
+       y2="365"
+       class="arrow"
+       id="line82" />
+    <rect
+       x="600"
+       y="370"
+       width="520"
+       height="60"
+       fill="#fff3cd"
+       stroke="#f39c12"
+       stroke-width="1.5"
+       rx="5"
+       id="rect84" />
+    <text
+       x="650"
+       y="395"
+       class="text"
+       style="font-weight:bold"
+       id="text86">Phase 2:</text>
+    <text
+       x="740"
+       y="395"
+       class="text"
+       id="text88">OFDM Demod (eti-cmdline)</text>
+    <text
+       x="860"
+       y="412"
+       text-anchor="middle"
+       class="small-text"
+       id="text90">แปลง I/Q → ETI stream ⚠️ CPU intensive</text>
+    <line
+       x1="860"
+       y1="435"
+       x2="860"
+       y2="455"
+       class="arrow"
+       id="line92" />
+    <rect
+       x="600"
+       y="460"
+       width="520"
+       height="60"
+       fill="#fff3cd"
+       stroke="#f39c12"
+       stroke-width="1.5"
+       rx="5"
+       id="rect94" />
+    <text
+       x="650"
+       y="485"
+       class="text"
+       style="font-weight:bold"
+       id="text96">Phase 3:</text>
+    <text
+       x="740"
+       y="485"
+       class="text"
+       id="text98">FIC Parsing</text>
+    <text
+       x="860"
+       y="502"
+       text-anchor="middle"
+       class="small-text"
+       id="text100">แยก service information, metadata</text>
+    <line
+       x1="860"
+       y1="525"
+       x2="860"
+       y2="545"
+       class="arrow"
+       id="line102" />
+    <rect
+       x="600"
+       y="550"
+       width="520"
+       height="60"
+       fill="#fff3cd"
+       stroke="#f39c12"
+       stroke-width="1.5"
+       rx="5"
+       id="rect104" />
+    <text
+       x="650"
+       y="575"
+       class="text"
+       style="font-weight:bold"
+       id="text106">Phase 4-5:</text>
+    <text
+       x="740"
+       y="575"
+       class="text"
+       id="text108">AAC Decode + Audio Output</text>
+    <text
+       x="860"
+       y="592"
+       text-anchor="middle"
+       class="small-text"
+       id="text110">ถอดรหัสเสียงและเล่นผ่าน speaker</text>
+    <!-- Pros/Cons -->
+    <text
+       x="600"
+       y="640"
+       class="text"
+       style="fill:#27ae60"
+       id="text112">✅ เห็นทุกขั้นตอน - เรียนรู้ลึก</text>
+    <text
+       x="600"
+       y="660"
+       class="text"
+       style="fill:#27ae60"
+       id="text114">✅ ปรับแต่งได้, flexible</text>
+    <text
+       x="600"
+       y="680"
+       class="text"
+       style="fill:#27ae60"
+       id="text116">✅ ราคาถูก (~$25)</text>
+    <text
+       x="600"
+       y="700"
+       class="text"
+       style="fill:#e74c3c"
+       id="text118">❌ Latency สูง (2-5 sec), ใช้ CPU มาก</text>
+    <text
+       x="600"
+       y="720"
+       class="text"
+       style="fill:#e74c3c"
+       id="text120">❌ Complex software stack</text>
+  </g>
+  <!-- Bottom comparison -->
+  <rect
+     x="55.084747"
+     y="714.2373"
+     width="1100"
+     height="30"
+     fill="#ecf0f1"
+     stroke="#95a5a6"
+     stroke-width="1"
+     rx="5"
+     id="rect123" />
+  <text
+     x="605.08478"
+     y="734.2373"
+     text-anchor="middle"
+     class="text"
+     style="font-weight:bold"
+     id="text125">🎯 เลือก Hardware = ต้องการผลลัพธ์เร็ว | เลือก Software = ต้องการเรียนรู้ลึก</text>
+</svg>
