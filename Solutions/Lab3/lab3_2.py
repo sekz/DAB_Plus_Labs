@@ -22,10 +22,10 @@ class ETICmdlineWrapper:
         self.eti_cmdline_path = "eti-cmdline"  # assume it's in PATH
         self.input_file = None
         self.output_file = None
-        self.frequency = 185360000  # DAB+ Thailand default
+        self.channel = "6C"  # DAB+ Thailand default channel
         self.process = None
-        self.sample_rate = 2048000
         self.gain = 50
+        self.band = "BAND_III"
 
     def check_eti_cmdline(self):
         """
@@ -33,20 +33,22 @@ class ETICmdlineWrapper:
         """
         try:
             # ตรวจสอบ version และ help
-            result = subprocess.run([self.eti_cmdline_path, "--help"],
+            result = subprocess.run([self.eti_cmdline_path, "-h"],
                                   capture_output=True, text=True, timeout=10)
 
-            if result.returncode == 0:
+            # eti-cmdline-rtlsdr returns error code but still shows help
+            if "eti-cmdline" in result.stderr or "eti-cmdline" in result.stdout:
                 print("eti-cmdline found and ready")
                 print("Available options:")
                 # แสดงบางส่วนของ help
-                help_lines = result.stdout.split('\n')[:10]
+                output = result.stderr if result.stderr else result.stdout
+                help_lines = output.split('\n')[:15]
                 for line in help_lines:
                     if line.strip():
                         print(f"  {line}")
                 return True
             else:
-                print(f"eti-cmdline returned error code: {result.returncode}")
+                print(f"eti-cmdline not recognized")
                 return False
 
         except FileNotFoundError:
@@ -63,21 +65,11 @@ class ETICmdlineWrapper:
             print(f"Error checking eti-cmdline: {e}")
             return False
 
-    def setup_files(self, input_file="raw_iq_data.bin", output_file="dab_ensemble.eti"):
+    def setup_files(self, output_file="dab_ensemble.eti"):
         """
-        ตั้งค่าไฟล์ input และ output
+        ตั้งค่าไฟล์ output
         """
-        # ตรวจสอบไฟล์ input
-        if not os.path.exists(input_file):
-            print(f"Input file not found: {input_file}")
-            print("Please run lab3_1a.py first to generate I/Q data")
-            return False
-
-        file_size = os.path.getsize(input_file)
-        print(f"Input file: {input_file} ({file_size:,} bytes)")
-
-        # ตั้งค่า paths
-        self.input_file = os.path.abspath(input_file)
+        # ตั้งค่า output path
         self.output_file = os.path.abspath(output_file)
 
         # สร้างโฟลเดอร์สำหรับ output หากจำเป็น
@@ -85,39 +77,37 @@ class ETICmdlineWrapper:
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        print(f"Input file: {self.input_file}")
         print(f"Output file: {self.output_file}")
         return True
 
     def run_eti_cmdline(self, runtime_seconds=30):
         """
-        เรียกใช้ eti-cmdline เพื่อแปลง I/Q เป็น ETI
+        เรียกใช้ eti-cmdline เพื่อรับสัญญาณ DAB จาก RTL-SDR
         """
-        if not self.input_file or not os.path.exists(self.input_file):
-            print("Input file not found")
-            return False
+        if not self.output_file:
+            self.output_file = "dab_ensemble.eti"
 
         try:
-            # สร้างคำสั่ง eti-cmdline สำหรับไฟล์ input
+            # สร้างคำสั่ง eti-cmdline สำหรับ RTL-SDR
             cmd = [
                 self.eti_cmdline_path,
-                "-d", "file",  # input from file
-                "-I", self.input_file,  # input file
-                "-F", str(int(self.frequency)),  # center frequency
+                "-C", self.channel,  # DAB channel (e.g., 12C)
+                "-B", self.band,  # Band (BAND_III or L_BAND)
                 "-O", self.output_file,  # output ETI file
-                "-C", str(self.sample_rate),  # sample rate
                 "-G", str(self.gain),  # gain
-                "-v"  # verbose output
+                "-t", str(runtime_seconds),  # record time
+                "-J"  # write stations to JSON
             ]
 
-            print(f"Running eti-cmdline...")
+            print(f"Running eti-cmdline with RTL-SDR...")
             print(f"Command: {' '.join(cmd)}")
+            print(f"Channel: {self.channel}, Band: {self.band}")
 
             # เรียกใช้ subprocess
             self.process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
                 universal_newlines=True
@@ -170,35 +160,57 @@ class ETICmdlineWrapper:
             error_count = 0
             frame_count = 0
 
-            for line in iter(self.process.stdout.readline, ''):
-                if not line:
-                    break
+            import select
 
-                line = line.strip()
-                if not line:
-                    continue
+            while self.process.poll() is None:
+                # Read from both stdout and stderr
+                reads = []
+                if self.process.stdout:
+                    reads.append(self.process.stdout)
+                if self.process.stderr:
+                    reads.append(self.process.stderr)
 
-                # Parse output สำหรับข้อมูลสำคัญ
-                if "sync found" in line.lower():
-                    if not sync_found:
-                        print("✓ DAB sync found!")
-                        sync_found = True
+                for stream in reads:
+                    line = stream.readline()
+                    if line:
+                        line = line.strip()
+                        if not line:
+                            continue
 
-                elif "frame" in line.lower() and "error" not in line.lower():
-                    frame_count += 1
-                    if frame_count % 100 == 0:
-                        print(f"Processed {frame_count} frames...")
+                        # Display all output
+                        print(f"  {line}")
 
-                elif "error" in line.lower():
-                    error_count += 1
-                    if error_count <= 5:  # แสดง error แรกๆ เท่านั้น
-                        print(f"⚠ Error: {line}")
+                        # Parse output สำหรับข้อมูลสำคัญ
+                        if ("sync" in line.lower() or "locked" in line.lower() or
+                            "here we go" in line.lower() or "ensemble" in line.lower() and "detected" in line.lower()):
+                            if not sync_found:
+                                print("✓ DAB sync found!")
+                                sync_found = True
 
-                elif "snr" in line.lower():
-                    print(f"📊 Signal quality: {line}")
+                        # Count frames (numbers only)
+                        if line.strip().isdigit():
+                            frame_count += 1
 
-                elif "bitrate" in line.lower():
-                    print(f"📈 {line}")
+                        if "error" in line.lower() or "no dab" in line.lower():
+                            error_count += 1
+
+                        if "estimated snr" in line.lower():
+                            print(f"📊 {line}")
+
+            # Read any remaining output
+            if self.process.stdout:
+                remaining = self.process.stdout.read()
+                if remaining:
+                    for line in remaining.split('\n'):
+                        if line.strip():
+                            print(f"  {line.strip()}")
+
+            if self.process.stderr:
+                remaining = self.process.stderr.read()
+                if remaining:
+                    for line in remaining.split('\n'):
+                        if line.strip():
+                            print(f"  {line.strip()}")
 
             print(f"\nMonitoring completed:")
             print(f"- Sync found: {'Yes' if sync_found else 'No'}")
@@ -253,11 +265,37 @@ class ETICmdlineWrapper:
             bitrate = (file_size * 8) / duration_seconds if duration_seconds > 0 else 0
             print(f"Average bitrate: {bitrate/1000:.1f} kbps")
 
+            # แสดงข้อมูล stations จาก JSON file
+            self.display_station_info()
+
             return True
 
         except Exception as e:
             print(f"Error analyzing ETI output: {e}")
             return False
+
+    def display_station_info(self):
+        """แสดงข้อมูล stations จาก JSON file"""
+        try:
+            import json
+            import re
+            json_file = f"ensemble-ch-{self.channel}.json"
+            if os.path.exists(json_file):
+                with open(json_file, 'r') as f:
+                    content = f.read()
+                    # Fix malformed JSON: "Eid:"4FFF" -> "Eid":"4FFF"
+                    content = re.sub(r'"Eid:"([^"]*)"', r'"Eid":"\1"', content)
+                    data = json.loads(content)
+
+                    print(f"\n=== Station Information ===")
+                    print(f"Channel: {data.get('channel', 'N/A')}")
+                    print(f"Ensemble: {data.get('ensemble', 'N/A')}")
+                    print(f"Ensemble ID: {data.get('Eid', 'N/A')}")
+                    print(f"\nStations found: {len(data.get('stations', {}))}")
+                    for i, (name, sid) in enumerate(data.get('stations', {}).items(), 1):
+                        print(f"  {i:2d}. {name:20s} ({sid})")
+        except Exception as e:
+            print(f"Could not display station info: {e}")
 
     def validate_eti_frame(self, frame_data):
         """ตรวจสอบความถูกต้องของ ETI frame อย่างง่าย"""
@@ -294,12 +332,12 @@ def test_with_rtlsdr():
     try:
         cmd = [
             "eti-cmdline",
-            "-d", "rtlsdr",  # direct RTL-SDR input
-            "-F", "185360000",  # DAB+ frequency
+            "-C", "6C",  # DAB channel
+            "-B", "BAND_III",  # Band
             "-O", "direct_dab_ensemble.eti",
-            "-C", "2048000",  # sample rate
             "-G", "50",  # gain
-            "-v"
+            "-t", "30",  # record time
+            "-J"  # write stations to JSON
         ]
 
         print(f"Command: {' '.join(cmd)}")
@@ -308,9 +346,9 @@ def test_with_rtlsdr():
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                  stderr=subprocess.STDOUT, text=True)
 
-        # รันเป็นเวลา 30 วินาที
+        # รอให้ process เสร็จ
         try:
-            stdout, _ = process.communicate(timeout=30)
+            stdout, _ = process.communicate(timeout=40)
             print("RTL-SDR test output:")
             print(stdout[:1000])  # แสดง output บางส่วน
         except subprocess.TimeoutExpired:
@@ -344,7 +382,8 @@ def main():
             eti_wrapper.analyze_eti_output()
 
         # ทดสอบกับ RTL-SDR โดยตรง (optional)
-        if len(os.sys.argv) > 1 and os.sys.argv[1] == "--rtlsdr":
+        import sys
+        if len(sys.argv) > 1 and sys.argv[1] == "--rtlsdr":
             test_with_rtlsdr()
 
     except KeyboardInterrupt:
