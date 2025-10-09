@@ -532,7 +532,18 @@ def main():
     if len(sys.argv) > 1:
         eti_filename = sys.argv[1]
     else:
+        # Default: use output from lab3_2.py
         eti_filename = "dab_ensemble.eti"
+        print(f"\nUsing default ETI file from lab3_2.py: {eti_filename}")
+        if not os.path.exists(eti_filename):
+            print(f"\nETI file '{eti_filename}' not found!")
+            print("Please run lab3_2.py first to generate the ETI stream.")
+            print("\nUsage:")
+            print(f"  python3 lab3_2.py   # Generate ETI file")
+            print(f"  python3 lab3_3.py   # Analyze the generated ETI file")
+            print(f"\nOr specify a custom ETI file:")
+            print(f"  python3 lab3_3.py <path_to_eti_file>")
+            return
 
     try:
         # วิเคราะห์ ETI file
@@ -546,13 +557,13 @@ def main():
             parser.export_service_list()
             parser.export_subchannel_info()
 
-            print(f"\nAnalysis completed successfully!")
-            print(f"Output files:")
+            print(f"\n✓ Analysis completed successfully!")
+            print(f"\nOutput files:")
             print(f"  - service_list.json")
             print(f"  - subchannel_info.json")
 
         else:
-            print("ETI analysis failed")
+            print("✗ ETI analysis failed")
 
     except KeyboardInterrupt:
         print("\nUser interrupted")

@@ -427,10 +427,12 @@ class ServiceListWidget(QWidget):
                     item.setData(Qt.UserRole, service_id)
                     self.service_list.addItem(item)
 
-                print(f"Loaded {len(self.services)} services")
+                print(f"✓ Loaded {len(self.services)} services from lab3_3.py output")
 
             else:
                 # Add mock services for demo
+                print("Service list not found, using mock services for demonstration")
+                print("Run lab3_2.py and lab3_3.py to get real service data")
                 self.add_mock_services()
 
         except Exception as e:
@@ -672,6 +674,10 @@ class DABPlusGUI(QMainWindow):
 
 def main():
     """Main function"""
+    print("=== Lab 3 Phase 5: Complete GUI Application ===")
+    print("\nThis lab creates a complete DAB+ receiver GUI application")
+    print("It integrates all previous labs into a graphical interface\n")
+
     app = QApplication(sys.argv)
 
     # Set application properties
@@ -691,12 +697,17 @@ def main():
     if '--fullscreen' in sys.argv:
         window.showFullScreen()
 
-    print("DAB+ GUI Application started")
-    print("Controls:")
+    print("✓ DAB+ GUI Application started")
+    print("\nWorkflow:")
+    print("  1. Run lab3_2.py to capture DAB signal → creates dab_ensemble.eti")
+    print("  2. Run lab3_3.py to analyze ETI → creates service_list.json")
+    print("  3. Click 'Refresh Services' in GUI to load service_list.json")
+    print("\nControls:")
     print("  - Select service from left panel")
     print("  - Use tabs to switch between spectrum, slideshow, and settings")
     print("  - Audio controls are in the left panel")
     print("  - Press Alt+F4 to exit (or use window controls)")
+    print("\nNote: GUI will work with mock data if service_list.json not found")
 
     sys.exit(app.exec_())
 

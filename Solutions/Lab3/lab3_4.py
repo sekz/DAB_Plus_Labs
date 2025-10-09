@@ -52,8 +52,11 @@ class DABServicePlayer:
         """
         try:
             if not os.path.exists(filename):
-                print(f"Service list file not found: {filename}")
-                print("Run lab3_3.py first to analyze ETI and generate service list")
+                print(f"\nService list file not found: {filename}")
+                print("Please run the previous labs first:")
+                print("  1. python3 lab3_2.py  # Generate ETI file from RTL-SDR")
+                print("  2. python3 lab3_3.py  # Analyze ETI and create service list")
+                print("  3. python3 lab3_4.py  # Play audio from services")
                 return False
 
             with open(filename, 'r', encoding='utf-8') as f:
@@ -68,7 +71,7 @@ class DABServicePlayer:
                     'components': service['components']
                 }
 
-            print(f"Loaded {len(self.services)} services:")
+            print(f"\n✓ Loaded {len(self.services)} services:")
             for service_id, service_info in self.services.items():
                 print(f"  - {service_info['label']} (ID: 0x{service_id:04X})")
 
@@ -504,12 +507,18 @@ def list_available_services():
 def main():
     """ฟังก์ชันหลักสำหรับทดสอบ"""
     print("=== Lab 3 Phase 4: Service Display & Audio Playback ===")
+    print("\nThis lab continues from lab3_3.py")
+    print("It loads the service list and plays audio from selected services\n")
 
     # แสดงรายการ services
     available_services = list_available_services()
 
     if not available_services:
-        print("No services found. Run lab3_3.py first to analyze ETI file.")
+        print("\n✗ No services found.")
+        print("\nWorkflow:")
+        print("  1. Run lab3_2.py to capture DAB signal and create ETI file")
+        print("  2. Run lab3_3.py to analyze ETI and extract service list")
+        print("  3. Run lab3_4.py to play audio from services")
         return
 
     # ตรวจสอบ command line arguments
@@ -526,6 +535,8 @@ def main():
         # ใช้ service แรกที่มี
         service_id = available_services[0]
         print(f"\nNo service specified, using first service: 0x{service_id:04X}")
+        print(f"\nUsage: python3 lab3_4.py [service_id]")
+        print(f"Example: python3 lab3_4.py 0x{service_id:04X}")
 
     # สร้าง player และเล่น service
     player = DABServicePlayer()
