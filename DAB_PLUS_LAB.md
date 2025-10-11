@@ -26,10 +26,10 @@
 - **Progressive Development**: เรียนรู้ DAB+ แบบ step-by-step ใน 5 phases
 - **Phase 1a**: lab3_1a.py - RTL-SDR I/Q data acquisition (pyrtlsdr)
 - **Phase 1b**: lab3_1b.py - Network RTL-SDR client (rtl_tcp)
-- **Phase 2**: lab3_2.py - ETI stream processing (eti-cmdline)
-- **Phase 3**: lab3_3.py - ETI parser และ service extraction
-- **Phase 4**: lab3_4.py - Audio playback และ slideshow
-- **Phase 5**: lab3_5.py - Complete PyQt5 GUI application
+- **Phase 2**: lab3_2.py - ETI stream processing (eti-cmdline from `/home/pi/DAB_Plus_Labs/eti/`)
+- **Phase 3**: lab3_3.py - ETI parser และ service extraction (uses JSON from eti-cmdline)
+- **Phase 4**: lab3_4.py - Audio playback (ni2out from `/home/pi/DAB_Plus_Labs/eti/`)
+- **Phase 5**: lab3_5.py - Complete PyQt5 GUI application with real audio integration
 
 ### Lab 4: สร้าง DAB+ Station Scanner (การบ้าน - 3-4 ชั่วโมง)
 - สร้างแอปพลิเคชันสแกนสถานี DAB+ อย่างง่าย
@@ -588,30 +588,29 @@ class RTLTCPClient:
 ### ✅ Phase 2: ETI Stream Processing (lab3_2.py)
 ```python
 # ✅ COMPLETED - eti-cmdline integration
+# Tool path: /home/pi/DAB_Plus_Labs/eti/eti-cmdline
 # I/Q data → ETI stream (6144-byte frames)
 # Sync monitoring และ error rate tracking
-# Export: dab_ensemble.eti
+# Export: dab_ensemble.eti, ensemble-ch-6C.json
 ```
 
 ### ✅ Phase 3: ETI Parser และ Service Extraction (lab3_3.py)
 ```python
-# ✅ COMPLETED - Complete ETI analyzer
-class ETIFrameParser:
-    def parse_eti_frame(self, frame_data):
-        # Parse 6144-byte ETI-NI frames
-        # FIC/FIG decoding สำหรับ service information
-        # Export: service_list.json, subchannel_info.json
+# ✅ COMPLETED - Simplified ETI analyzer using JSON from eti-cmdline
+# Uses ensemble-ch-6C.json created by eti-cmdline (-J option)
+# No manual ETI parsing required - uses pre-decoded data
+# Export: service_list.json, subchannel_info.json
 ```
 
 ### ✅ Phase 4: Audio Playback และ Slideshow (lab3_4.py)
 ```python
-# ✅ COMPLETED - Complete audio processing
-class DABServicePlayer:
-    def play_service(self, service_id):
-        # ETI → AAC decode → PyAudio playback
-        # Dynamic Label Segment (DLS) extraction
-        # MOT slideshow image handling
-        # Export: decoded_audio.wav, slideshow_images/
+# ✅ COMPLETED - Complete audio processing using ni2out
+# Tool path: /home/pi/DAB_Plus_Labs/eti/ni2out
+# ETI → AAC extraction (ni2out) → PCM decode (ffmpeg) → PyAudio playback
+# Command-line options: -s for service ID, -l to list services
+# ⚠️ MOT slideshow: ni2out does NOT support MOT extraction
+# Use dablin_gtk or XPADxpert for MOT slideshow viewing
+# Export: extracted_audio/*.aac, *_pcm.wav
 ```
 
 ### ✅ Phase 5: Complete GUI Application (lab3_5.py)
@@ -634,6 +633,30 @@ class DABPlusGUI(QMainWindow):
 - **Real-time Analysis** - Spectrum analyzer, signal quality monitoring
 - **Complete Integration** - ทุก phase ทำงานร่วมกันได้
 - **Thailand DAB+ Ready** - 185.360 MHz, 202.928 MHz support
+
+### 🛠️ Lab 3 Tool Paths และข้อกำหนด:
+**eti-tools Required** (build from https://github.com/JvanKatwijk/eti-tools):
+- **eti-cmdline**: `/home/pi/DAB_Plus_Labs/eti/eti-cmdline` - I/Q → ETI conversion
+- **ni2out**: `/home/pi/DAB_Plus_Labs/eti/ni2out` - ETI → Audio extraction
+
+**⚠️ MOT Slideshow Limitations**:
+- ni2out **ไม่รองรับ** MOT extraction
+- **Alternative tools** for MOT viewing:
+  - `dablin_gtk -i dab_ensemble.eti` (GUI with MOT display)
+  - `XPADxpert.jar` (Java GUI tool for MOT extraction)
+  - `welle-io` (Full DAB+ receiver with MOT support)
+
+**Workflow Commands**:
+```bash
+# Phase 2: Generate ETI + JSON
+/home/pi/DAB_Plus_Labs/eti/eti-cmdline -C 6C -B BAND_III -O dab_ensemble.eti -J
+
+# Phase 4: List services from ETI
+/home/pi/DAB_Plus_Labs/eti/ni2out --list -i dab_ensemble.eti
+
+# Phase 4: Extract audio for specific service
+/home/pi/DAB_Plus_Labs/eti/ni2out -i dab_ensemble.eti -s 0xa001 > audio.aac
+```
 
 ### 📁 Output Files ที่ได้:
 ```

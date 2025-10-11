@@ -14,14 +14,16 @@ import json
 import threading
 import time
 import os
+import subprocess
 import numpy as np
 from datetime import datetime
+from PyQt5.QtCore import QUrl
 
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QHBoxLayout, QGridLayout, QLabel, QPushButton,
                             QSlider, QListWidget, QListWidgetItem, QTextEdit,
                             QProgressBar, QGroupBox, QScrollArea, QFrame,
-                            QSplitter, QTabWidget, QSpinBox, QComboBox)
+                            QSplitter, QTabWidget, QSpinBox, QComboBox, QMessageBox)
 from PyQt5.QtCore import QTimer, QThread, pyqtSignal, Qt, QSize
 from PyQt5.QtGui import QFont, QPixmap, QIcon, QPalette, QColor
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
@@ -31,6 +33,14 @@ import pyqtgraph as pg
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+
+# Import DABServicePlayer from lab3_4.py for real audio/MOT extraction
+try:
+    from lab3_4 import DABServicePlayer
+    HAVE_LAB3_4 = True
+except ImportError:
+    print("Warning: Could not import lab3_4.py - audio extraction will be limited")
+    HAVE_LAB3_4 = False
 
 class SpectrumAnalyzer(QWidget):
     """Real-time spectrum analyzer widget"""
@@ -249,6 +259,13 @@ class AudioControlWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.media_player = QMediaPlayer()
+        self.dab_player = None
+        self.current_audio_file = None
+
+        # Initialize DABServicePlayer if available
+        if HAVE_LAB3_4:
+            self.dab_player = DABServicePlayer()
+
         self.setup_ui()
 
     def setup_ui(self):
@@ -309,19 +326,53 @@ class AudioControlWidget(QWidget):
         self.media_player.volumeChanged.connect(self.volume_changed)
 
     def load_service(self, service_info, audio_file=None):
-        """Load service for playback"""
+        """Load service for playback - now with real ni2out audio extraction"""
         service_label = service_info.get('label', 'Unknown Service')
+        service_id = service_info.get('id', 0)
+
         self.now_playing_label.setText(f"Service: {service_label}")
+        self.dls_label.setText("Extracting audio from ETI...")
+        self.progress_bar.setVisible(True)
 
-        # Mock DLS data
-        dls_text = f"Now playing on {service_label} • DAB+ Digital Radio"
+        # Extract real audio if DABServicePlayer is available
+        if self.dab_player and HAVE_LAB3_4:
+            try:
+                # Load service list
+                if not self.dab_player.services:
+                    self.dab_player.load_service_list()
+
+                # Extract audio using ni2out
+                print(f"Extracting audio for service 0x{service_id:04X}...")
+                audio_file = self.dab_player.extract_audio_from_eti(service_id)
+
+                if audio_file and os.path.exists(audio_file):
+                    # Decode AAC to PCM
+                    pcm_file = self.dab_player.decode_aac_to_pcm(audio_file)
+
+                    if pcm_file and os.path.exists(pcm_file):
+                        self.current_audio_file = pcm_file
+
+                        # Load into media player
+                        url = QUrl.fromLocalFile(os.path.abspath(pcm_file))
+                        self.media_player.setMedia(QMediaContent(url))
+
+                        # Update DLS
+                        dls_text = f"Now playing: {service_label} • DAB+ Digital Radio"
+                        self.dls_label.setText(dls_text)
+
+                        print(f"✓ Audio ready: {pcm_file}")
+                        self.progress_bar.setVisible(False)
+                        return
+
+            except Exception as e:
+                print(f"Error extracting audio: {e}")
+                import traceback
+                traceback.print_exc()
+
+        # Fallback: Mock DLS data
+        dls_text = f"Service: {service_label} • Audio extraction requires ETI file"
         self.dls_label.setText(dls_text)
-
-        # Load audio file if provided
-        if audio_file and os.path.exists(audio_file):
-            self.media_player.setMedia(QMediaContent())  # Clear first
-            # Note: QMediaPlayer doesn't directly support file paths in all Qt versions
-            # In real implementation, might need to use QUrl.fromLocalFile()
+        self.progress_bar.setVisible(False)
 
     def toggle_playback(self):
         """Toggle play/pause"""
@@ -660,14 +711,24 @@ class DABPlusGUI(QMainWindow):
 
         print(f"Selected service: {service_label} (0x{service_id:04X})")
 
-        # Update audio control
+        # Update audio control with real extraction
         self.audio_control_widget.load_service(service_info)
 
-        # Load slideshow images (mock)
-        from lab3_4 import DABServicePlayer
-        player = DABServicePlayer()
-        images = player.extract_slideshow_images(service_id)
-        self.slideshow_viewer.load_images(images)
+        # Load slideshow images (mock images for demo)
+        # Note: Real MOT extraction requires GUI tools (dablin_gtk or XPADxpert)
+        if HAVE_LAB3_4:
+            try:
+                player = DABServicePlayer()
+                # This creates mock/demo images for educational purposes
+                # ni2out does NOT support MOT extraction - see lab3_4.py --mot-info
+                images = player.extract_slideshow_images(service_id)
+                self.slideshow_viewer.load_images(images)
+                print(f"✓ Loaded {len(images)} slideshow images (demo)")
+            except Exception as e:
+                print(f"Note: Slideshow images are mock/demo images")
+                print(f"Real MOT extraction requires: dablin_gtk or XPADxpert")
+        else:
+            print("lab3_4.py not available - slideshow disabled")
 
         # Update status
         self.statusBar().showMessage(f"Service: {service_label}")

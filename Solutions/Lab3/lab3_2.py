@@ -19,7 +19,7 @@ import signal
 
 class ETICmdlineWrapper:
     def __init__(self):
-        self.eti_cmdline_path = "eti-cmdline"  # assume it's in PATH
+        self.eti_cmdline_path = "/home/pi/DAB_Plus_Labs/eti/eti-cmdline"  # Full path to eti-cmdline
         self.input_file = None
         self.output_file = None
         self.channel = "6C"  # DAB+ Thailand default channel
@@ -29,40 +29,56 @@ class ETICmdlineWrapper:
 
     def check_eti_cmdline(self):
         """
-        ตรวจสอบว่า eti-cmdline ติดตั้งแล้วหรือไม่
+        ตรวจสอบว่า eti-cmdline มีอยู่และใช้งานได้หรือไม่
         """
         try:
+            # ตรวจสอบว่าไฟล์มีอยู่
+            if not os.path.exists(self.eti_cmdline_path):
+                print(f"✗ eti-cmdline not found at: {self.eti_cmdline_path}")
+                print("\nPlease install eti-stuff package:")
+                print("  git clone https://github.com/JvanKatwijk/eti-stuff")
+                print("  cd eti-stuff && mkdir build && cd build")
+                print("  cmake .. -DRTLSDR=1")
+                print("  make")
+                print("  cp eti-cmdline-rtlsdr /home/pi/DAB_Plus_Labs/eti/eti-cmdline")
+                return False
+
+            # ตรวจสอบว่าเป็น executable
+            if not os.access(self.eti_cmdline_path, os.X_OK):
+                print(f"✗ eti-cmdline is not executable: {self.eti_cmdline_path}")
+                print("Run: chmod +x /home/pi/DAB_Plus_Labs/eti/eti-cmdline")
+                return False
+
             # ตรวจสอบ version และ help
             result = subprocess.run([self.eti_cmdline_path, "-h"],
                                   capture_output=True, text=True, timeout=10)
 
             # eti-cmdline-rtlsdr returns error code but still shows help
-            if "eti-cmdline" in result.stderr or "eti-cmdline" in result.stdout:
-                print("eti-cmdline found and ready")
-                print("Available options:")
+            output = result.stderr if result.stderr else result.stdout
+
+            if "eti-cmdline" in output:
+                print(f"✓ eti-cmdline found at: {self.eti_cmdline_path}")
+                print("\nAvailable options:")
                 # แสดงบางส่วนของ help
-                output = result.stderr if result.stderr else result.stdout
-                help_lines = output.split('\n')[:15]
+                help_lines = output.split('\n')
                 for line in help_lines:
-                    if line.strip():
+                    if line.strip() and ('-' in line or 'option' in line.lower()):
                         print(f"  {line}")
                 return True
             else:
-                print(f"eti-cmdline not recognized")
+                print(f"✗ eti-cmdline not recognized")
                 return False
 
         except FileNotFoundError:
-            print("eti-cmdline not found. Please install eti-stuff package:")
-            print("git clone https://github.com/JvanKatwijk/eti-stuff")
-            print("cd eti-stuff && mkdir build && cd build")
-            print("cmake .. -DRTLSDR=1")
-            print("make && sudo make install")
+            print(f"✗ eti-cmdline not found at: {self.eti_cmdline_path}")
             return False
         except subprocess.TimeoutExpired:
-            print("eti-cmdline command timed out")
+            print("✗ eti-cmdline command timed out")
             return False
         except Exception as e:
-            print(f"Error checking eti-cmdline: {e}")
+            print(f"✗ Error checking eti-cmdline: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def setup_files(self, output_file="dab_ensemble.eti"):
@@ -329,9 +345,16 @@ def test_with_rtlsdr():
     """
     print("Testing with direct RTL-SDR input...")
 
+    eti_cmdline_path = "/home/pi/DAB_Plus_Labs/eti/eti-cmdline"
+
     try:
+        # ตรวจสอบว่า eti-cmdline มีอยู่
+        if not os.path.exists(eti_cmdline_path):
+            print(f"✗ eti-cmdline not found at: {eti_cmdline_path}")
+            return
+
         cmd = [
-            "eti-cmdline",
+            eti_cmdline_path,
             "-C", "6C",  # DAB channel
             "-B", "BAND_III",  # Band
             "-O", "direct_dab_ensemble.eti",
@@ -357,6 +380,8 @@ def test_with_rtlsdr():
 
     except Exception as e:
         print(f"Error in RTL-SDR test: {e}")
+        import traceback
+        traceback.print_exc()
 
 def main():
     """ฟังก์ชันหลักสำหรับทดสอบ"""

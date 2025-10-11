@@ -12,7 +12,7 @@ footer: 'Digital Audio Broadcasting Plus Learning Project'
 <style>
 
 section {
-  font-size: 1.75em;
+  font-size: 1.70em;
   padding: 2em;
 }
 section table { font-size: 16px; }
@@ -944,13 +944,13 @@ sudo apt install welle.io
 
 # 📡 Lab 3 ภาพรวมของ LAB
 
-![alt text](img/Lab3_DAB_Plus_Flow_Diagram.svg)
+![width:1080px](img/Lab3_DAB_Plus_Flow_Diagram.svg)
 
 ---
 
 # 📡 Lab 3 รายละเอียด Technical Architecture
 
-![alt text](img/Lab3_Technical_Architecture.svg)
+![width:980px](img/Lab3_Technical_Architecture.svg)
 
 ---
 
@@ -1030,27 +1030,28 @@ class RTLTCPClient:
 **เรียนรู้**: การใช้ eti-cmdline แปลงสัญญาณ I/Q จาก RTL-SDR เป็น ETI frames ขนาด 6144 bytes ต่อ frame
 ```python
 # lab3_2.py - DAB+ Signal → ETI Conversion
+# Tool path: /home/pi/DAB_Plus_Labs/eti/eti-cmdline
 import subprocess
 import threading
-from queue import Queue
 
 class ETIProcessor:
     def __init__(self):
-        self.eti_cmdline_path = "/usr/local/bin/eti-cmdline"
-        self.eti_queue = Queue()
-        self.sync_status = False
-    def start_eti_processing(self):
-        # TODO: เริ่ม eti-cmdline subprocess
-        # TODO: ส่ง I/Q data เข้า stdin
-        # TODO: รับ ETI frames จาก stdout
-        pass
-    def parse_eti_frame(self, eti_data):
-        # TODO: แยก ETI frame (6144 bytes)
-        # TODO: ตรวจสอบ sync pattern
-        # TODO: คำนวณ error rate
-        pass
+        self.eti_cmdline_path = "/home/pi/DAB_Plus_Labs/eti/eti-cmdline"
+        self.channel = "6C"  # DAB+ Thailand
+        self.output_file = "dab_ensemble.eti"
+
+    def run_eti_cmdline(self, runtime_seconds=30):
+        # Uses RTL-SDR directly
+        cmd = [
+            self.eti_cmdline_path,
+            "-C", self.channel,
+            "-B", "BAND_III",
+            "-O", self.output_file,
+            "-J"  # Output JSON with service info
+        ]
+        # Runs subprocess and monitors output
 ```
-**ผลลัพธ์**: ได้ ETI stream ที่สามารถแยกเป็น FIC และ MSC data
+**ผลลัพธ์**: dab_ensemble.eti + ensemble-ch-6C.json
 
 </div>
 <div>
@@ -1059,23 +1060,21 @@ class ETIProcessor:
 **เรียนรู้**: การติดตาม sync status และ error rate เพื่อประเมินคุณภาพสัญญาณ DAB+ แบบ real-time
 ```python
 class SignalQualityMonitor:
-    def __init__(self):
-        self.sync_rate = 0.0
-        self.error_count = 0
-        self.frame_count = 0
-    def update_quality_metrics(self, frame):
-        # TODO: คำนวณ sync success rate
-        # TODO: ติดตาม error statistics และ TODO: แสดงผล real-time status
+    def monitor_process(self):
+        # Parses eti-cmdline output
+        # Looks for "sync found", "locked"
+        # Tracks frame count
+        # Reports SNR values
         pass
-    def display_status(self):
-        # TODO: แสดง sync status ทุก 1 วินาที
-        # TODO: แสดง error rate percentage
-        # TODO: แสดง signal strength
-        pass
-```
-**ผลลัพธ์**: มี metrics แสดงคุณภาพสัญญาณและความเสถียรของการรับสัญญาณ
 
-**🎯 ผลลัพธ์ Phase 2**: ETI stream generation, sync monitoring, error tracking
+    def display_status(self):
+        print(f"✓ DAB sync found!")
+        print(f"📊 Frames processed: {frame_count}")
+        print(f"- Errors: {error_count}")
+```
+**ผลลัพธ์**: Real-time monitoring ของ ETI generation process
+
+**🎯 ผลลัพธ์ Phase 2**: ETI stream + JSON service list ready for Phase 3
 
 </div>
 </div>
@@ -1088,59 +1087,70 @@ class SignalQualityMonitor:
 <div class="columns">
 <div>
 
-### **FIC (Fast Information Channel) Parser**
-**เรียนรู้**: การถอดรหัส FIC data จาก ETI เพื่อดึงข้อมูล ensemble, services และ subchannels ผ่าน FIG decoding
+### **Simplified Service Extraction (JSON-based)**
+**เรียนรู้**: การใช้ JSON output จาก eti-cmdline แทนการ parse ETI frames manual
 ```python
-# lab3_3.py - ETI Frame Analysis
-class FICParser:
-    def __init__(self):
-        self.ensemble_info = {}
-        self.services = {}
-        self.subchannels = {}
-    def parse_fic_data(self, fic_bytes):
-        # TODO: แยก FIG (Fast Information Group)
-        # TODO: ดึง ensemble information
-        # TODO: แยก service list
-        pass
-    def decode_fig_types(self, fig_data):
-        # TODO: FIG 0/0 - Basic ensemble info
-        # TODO: FIG 0/1 - Basic subchannel info
-        # TODO: FIG 0/2 - Basic service info
-        # TODO: FIG 1/0 - Service labels
-        pass
+# lab3_3.py - Simple ETI Analysis
+import json
+import re
+
+def load_ensemble_json(channel="6C"):
+    # Load ensemble-ch-6C.json from eti-cmdline
+    json_filename = f"ensemble-ch-{channel}.json"
+    with open(json_filename, 'r') as f:
+        content = f.read()
+        # Fix malformed JSON if needed
+        content = re.sub(r'"Eid:"([^"]*)"', r'"Eid":"\1"', content)
+        data = json.loads(content)
+    return data
+
+def create_service_list(ensemble_data):
+    # Extract service information
+    stations = ensemble_data.get('stations', {})
+    services = []
+    for station_name, service_id_hex in stations.items():
+        service_id = int(service_id_hex, 16)
+        services.append({
+            'label': station_name,
+            'service_id': service_id,
+            'service_id_hex': service_id_hex
+        })
+    return services
 ```
-**ผลลัพธ์**: สามารถแยกข้อมูล ensemble และ service list จาก DAB+ multiplex
+**ผลลัพธ์**: Parsed service list from JSON - no manual FIC parsing required!
 
 </div>
 <div>
 
-### **Service Information Extraction**
-**เรียนรู้**: การจัดระเบียบข้อมูล services และ export เป็น JSON สำหรับใช้งานใน phases ต่อไป
+### **Service List Export**
+**เรียนรู้**: การสร้าง service_list.json สำหรับ Phase 4 audio playback
 ```python
-class ServiceExtractor:
-    def extract_services(self, fic_data):
-        # TODO: สร้าง service database
-        # TODO: จับคู่ service กับ subchannel
-        # TODO: ดึง audio parameters
-        pass
-    def export_service_list(self):
-        # TODO: บันทึกเป็น JSON format
-        # TODO: ใส่ข้อมูล service labels
-        # TODO: ระบุ audio bit rates
-        return {
-            "ensemble": "Thailand DAB+",
-            "services": [
-                {
-                    "name": "Service 1",
-                    "id": "0x1001",
-                    "bitrate": 128,
-                    "subchannel": 1
-                }
-            ]
-        }
+def create_service_list(ensemble_data):
+    service_list = {
+        'timestamp': datetime.now().isoformat(),
+        'ensemble_info': {
+            'channel': ensemble_data.get('channel'),
+            'ensemble_name': ensemble_data.get('ensemble'),
+            'ensemble_id': ensemble_data.get('Eid')
+        },
+        'services': []
+    }
+
+    # Add all discovered services
+    for station_name, sid in stations.items():
+        service_list['services'].append({
+            'service_id': int(sid, 16),
+            'label': station_name,
+            'components': [...]
+        })
+
+    # Save to JSON
+    with open('service_list.json', 'w') as f:
+        json.dump(service_list, f, indent=2)
 ```
-**ผลลัพธ์**: ไฟล์ service_list.json และ subchannel_info.json สำหรับ audio decoding
-**🎯 ผลลัพธ์ Phase 3**: service_list.json, subchannel_info.json, ensemble metadata
+**ผลลัพธ์**: service_list.json ready for Phase 4
+
+**🎯 ผลลัพธ์ Phase 3**: service_list.json from eti-cmdline JSON output
 
 </div>
 </div>
@@ -1154,62 +1164,66 @@ class ServiceExtractor:
 <div class="columns">
 <div>
 
-### **AAC Audio Decoder**
-**เรียนรู้**: การแยก AAC audio frames จาก MSC data และ decode ด้วย ffmpeg + PyAudio สำหรับเล่นเสียงผ่าน 3.5mm jack
+### **ni2out Audio Extraction**
+**เรียนรู้**: การใช้ ni2out tool แยก AAC audio จาก ETI และ decode ด้วย ffmpeg + PyAudio
 ```python
 # lab3_4.py - DAB+ Audio Processing
+# Tool path: /home/pi/DAB_Plus_Labs/eti/ni2out
 import subprocess
 import pyaudio
-from queue import Queue
-import threading
 
-class DABAudioDecoder:
+class DABServicePlayer:
     def __init__(self):
-        self.audio_queue = Queue()
-        self.pyaudio_instance = pyaudio.PyAudio()
-        self.stream = None
-        self.current_service = None
-    def extract_audio_frames(self, msc_data):
-        # TODO: แยก audio super frames
-        # TODO: ส่งข้อมูลไป ffmpeg decode
-        # TODO: ได้ raw PCM audio
-        pass
-    def setup_audio_output(self):
-        # TODO: ตั้งค่า PyAudio stream
-        # TODO: รองรับ 3.5mm jack output
-        # TODO: ควบคุม volume level
-        pass
+        self.ni2out_path = "/home/pi/DAB_Plus_Labs/eti/ni2out"
+        self.eti_filename = "dab_ensemble.eti"
+
+    def extract_audio_from_eti(self, service_id):
+        # Use ni2out to extract AAC audio
+        audio_filename = f"service_0x{service_id:04X}.aac"
+        with open(audio_filename, 'wb') as f:
+            subprocess.Popen([
+                self.ni2out_path,
+                '-i', self.eti_filename,
+                '-s', f'0x{service_id:04X}'
+            ], stdout=f)
+
+    def decode_aac_to_pcm(self, aac_file):
+        # Use ffmpeg to decode AAC → PCM
+        pcm_file = aac_file.replace('.aac', '_pcm.wav')
+        subprocess.run(['ffmpeg', '-i', aac_file, '-f', 'wav', pcm_file])
+        return pcm_file
 ```
-**ผลลัพธ์**: เล่นเสียง DAB+ ได้ผ่านหูฟัง พร้อมควบคุม volume
+**ผลลัพธ์**: Extract AAC → Decode PCM → Play audio with PyAudio
 
 </div>
 <div>
 
-### **Dynamic Label & Slideshow**
-**เรียนรู้**: การถอดรหัส DLS (song/artist info) และ MOT slideshow จาก PAD data เพื่อแสดงข้อมูลเพลงและรูปภาพ
+### **⚠️ MOT Slideshow Limitations**
+**Important**: ni2out does **NOT** support MOT extraction
 ```python
-class DABMetadataProcessor:
-    def __init__(self):
-        self.current_dls = ""
-        self.slideshow_images = []
-    def process_dls_data(self, dls_bytes):
-        # TODO: แยก Dynamic Label Segment
-        # TODO: รวม segments เป็น text
-        # TODO: แสดง song title, artist
-        pass
-    def process_mot_slideshow(self, mot_data):
-        # TODO: แยก MOT (Multimedia Object Transfer)
-        # TODO: ประกอบ JPEG/PNG images
-        # TODO: บันทึกรูปภาพ slideshow
-        pass
-    def display_now_playing(self):
-        # TODO: แสดง current track info
-        # TODO: แสดง slideshow image
-        pass
-```
-**ผลลัพธ์**: แสดงชื่อเพลง, ศิลปิน และ slideshow images แบบ real-time
+# MOT extraction NOT possible with ni2out
+# Use alternative tools instead:
 
-**🎯 ผลลัพธ์ Phase 4**: Working audio player, DLS text, slideshow images
+# Option 1: dablin_gtk (GUI)
+# dablin_gtk -i dab_ensemble.eti
+
+# Option 2: XPADxpert (Java GUI)
+# java -jar XPADxpert.jar dab_ensemble.eti
+
+# Option 3: welle-io (Full receiver)
+# welle-io
+
+# For lab3_4.py:
+def extract_slideshow_images(self, service_id):
+    # Creates MOCK/DEMO images for educational purposes
+    # Real MOT requires dablin_gtk or XPADxpert
+    print("Note: ni2out does NOT support MOT")
+    print("Use dablin_gtk or XPADxpert for real MOT")
+    return []  # or mock images
+```
+**ผลลัพธ์**: Audio works perfectly, MOT requires GUI tools
+
+**🎯 ผลลัพธ์ Phase 4**: Working audio player with command-line options (-s, -l, --mot-info)
 
 </div>
 </div>

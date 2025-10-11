@@ -38,34 +38,50 @@ sudo udevadm control --reload-rules
 rtl_test -t
 ```
 
-### Phase 2: DAB+ Signal Processing
+### Phase 2: DAB+ Signal Processing (eti-cmdline)
 ```bash
 # ติดตั้ง dependencies สำหรับ eti-cmdline
 sudo apt install -y cmake build-essential libfftw3-dev librtlsdr-dev git
 
 # ดาวน์โหลดและ compile eti-stuff
+cd ~
 git clone https://github.com/JvanKatwijk/eti-stuff
 cd eti-stuff
 mkdir build && cd build
 cmake .. -DRTLSDR=1
 make -j4
-sudo make install
+
+# คัดลอก binary ไปยัง project directory
+mkdir -p /home/pi/DAB_Plus_Labs/eti
+cp eti-cmdline-rtlsdr /home/pi/DAB_Plus_Labs/eti/eti-cmdline
 
 # ตรวจสอบการติดตั้ง
-eti-cmdline --help
+/home/pi/DAB_Plus_Labs/eti/eti-cmdline -h
 ```
 
-### Phase 3: ETI Analysis
+### Phase 3: ETI Analysis & Audio Tools (ni2out)
 ```bash
-# ติดตั้ง Python packages สำหรับ parsing
-pip install bitstring
+# ติดตั้ง dependencies สำหรับ eti-tools
+sudo apt install -y cmake build-essential libfftw3-dev icecast2
+
+# ดาวน์โหลดและ compile eti-tools
+cd ~
+git clone https://github.com/piratfm/eti-tools
+cd eti-tools
+make
+
+# คัดลอก binary ไปยัง project directory
+cp ni2out /home/pi/DAB_Plus_Labs/eti/ni2out
+
+# ตรวจสอบการติดตั้ง
+/home/pi/DAB_Plus_Labs/eti/ni2out -h
 ```
 
 ### Phase 4: Audio Playback
 ```bash
 # ติดตั้ง audio dependencies
 sudo apt install -y ffmpeg alsa-utils pulseaudio
-pip install ffmpeg-python pyaudio pillow
+pip install ffmpeg-python pyaudio pillow numpy
 
 # ตั้งค่า audio output (3.5mm jack)
 sudo raspi-config nonint do_audio 1
@@ -78,7 +94,10 @@ speaker-test -c2 -t wav
 ```bash
 # ติดตั้ง PyQt5 และ dependencies
 sudo apt install -y python3-pyqt5 python3-pyqt5-dev
-pip install PyQt5 pyqtgraph
+pip install PyQt5 pyqtgraph matplotlib
+
+# ติดตั้ง DAB viewers (สำหรับดู MOT slideshow)
+sudo apt install -y dablin welle-io
 
 # ตั้งค่า touchscreen (สำหรับ 7" HDMI)
 sudo apt install -y xinput-calibrator
@@ -89,115 +108,214 @@ sudo apt install -y xinput-calibrator
 ### Phase 1: RTL-SDR Data Acquisition
 
 #### ขั้นตอนที่ 1.1: ทดสอบ RTL-SDR พื้นฐาน (lab3_1a.py)
-1. **เชื่อมต่อ RTL-SDR** กับ Raspberry Pi
-2. **ตั้งค่าความถี่** DAB+ Thailand (185.360 MHz)
-3. **รับ I/Q samples** และบันทึกเป็นไฟล์
-4. **วิเคราะห์สเปกตรัม** เบื้องต้น
+```bash
+cd /home/pi/DAB_Plus_Labs/Labs/Lab3
+python3 lab3_1a.py
+```
+
+**สิ่งที่เกิดขึ้น:**
+1. เชื่อมต่อ RTL-SDR กับ Raspberry Pi
+2. ตั้งค่าความถี่ DAB+ Thailand (185.360 MHz)
+3. รับ I/Q samples และบันทึกเป็นไฟล์
+4. วิเคราะห์สเปกตรัมเบื้องต้น
+
+**Output:**
+- `raw_iq_data.bin` - I/Q samples (complex64)
+- `spectrum_analysis.png` - กราฟสเปกตรัม
 
 #### ขั้นตอนที่ 1.2: RTL-TCP Client (lab3_1b.py)
-1. **เริ่มต้น rtl_tcp server**: `rtl_tcp -a localhost -p 1234`
-2. **เชื่อมต่อผ่าน TCP** และควบคุม RTL-SDR
-3. **รับ I/Q data** ผ่านเครือข่าย
-4. **เปรียบเทียบ** กับการเชื่อมต่อโดยตรง
+```bash
+# Terminal 1: เริ่ม rtl_tcp server
+python3 lab3_1b.py --start-server
+
+# Terminal 2: รับข้อมูลผ่าน network
+python3 lab3_1b.py
+```
+
+**Output:**
+- `networked_iq_data.bin` - I/Q samples จาก network
+- `spectrum_analysis_rtltcp.png`
 
 ### Phase 2: DAB+ Signal Processing
 
 #### ขั้นตอนที่ 2: ETI Stream Generation (lab3_2.py)
-1. **ใช้ eti-cmdline** แปลง I/Q เป็น ETI stream
-2. **ตั้งค่าความถี่** และพารามิเตอร์
-3. **ติดตามสถานะ** การ sync และ error rate
-4. **บันทึก ETI stream** สำหรับขั้นตอนถัดไป
+```bash
+cd /home/pi/DAB_Plus_Labs/Labs/Lab3
+python3 lab3_2.py
+```
+
+**Tool Used:** `/home/pi/DAB_Plus_Labs/eti/eti-cmdline`
+
+**สิ่งที่เกิดขึ้น:**
+1. ใช้ eti-cmdline แปลง I/Q เป็น ETI stream
+2. รับสัญญาณ DAB+ จาก RTL-SDR โดยตรง
+3. ติดตามสถานะ sync และ signal quality
+4. บันทึก ETI stream และ JSON metadata
+
+**Output:**
+- `dab_ensemble.eti` - ETI stream (6144 bytes/frame, ~1052 frames, ~25 seconds)
+- `ensemble-ch-6C.json` - Station list และ metadata
+
+**คำสั่งที่สร้าง:**
+```bash
+/home/pi/DAB_Plus_Labs/eti/eti-cmdline \
+  -C 6C \
+  -B BAND_III \
+  -O dab_ensemble.eti \
+  -G 50 \
+  -t 30 \
+  -J
+```
 
 ### Phase 3: ETI Analysis
 
 #### ขั้นตอนที่ 3: Service Discovery (lab3_3.py)
-1. **Parse ETI frames** (6144 bytes แต่ละ frame)
-2. **แยก FIC data** (Fast Information Channel)
-3. **ค้นหา DAB+ services** และ subchannels
-4. **สร้างรายการ services** และบันทึกเป็น JSON
+```bash
+cd /home/pi/DAB_Plus_Labs/Labs/Lab3
+python3 lab3_3.py
+```
+
+**สิ่งที่เกิดขึ้น:**
+1. อ่าน `ensemble-ch-6C.json` จาก lab3_2
+2. แปลง station list เป็น service format
+3. สร้าง service_list.json และ subchannel_info.json
+
+**Output:**
+- `service_list.json` - รายการ 18 DAB+ services
+- `subchannel_info.json` - ข้อมูล subchannels
+
+**Services พบ:**
+- BOONMA TV (0xA001)
+- JKP TEST04-18 (0xA004-0xA018)
+- KKN MAHA NAKHON (0xA003)
+- SMARTRadio KK (0xA002)
 
 ### Phase 4: Audio Playback
 
 #### ขั้นตอนที่ 4: Service Player (lab3_4.py)
-1. **เลือก service** จากรายการ
-2. **แยกเสียง AAC** จาก ETI stream
-3. **เล่นเสียงผ่าน 3.5mm jack**
-4. **แสดง Dynamic Label** และ MOT slideshow
+```bash
+cd /home/pi/DAB_Plus_Labs/Labs/Lab3
+
+# แสดงรายการ services
+python3 lab3_4.py -l
+
+# เล่น service ที่เลือก
+python3 lab3_4.py -s 0xa001
+
+# แสดงข้อมูลการ extract MOT slideshow
+python3 lab3_4.py --mot-info
+```
+
+**Tool Used:** `/home/pi/DAB_Plus_Labs/eti/ni2out`
+
+**สิ่งที่เกิดขึ้น:**
+1. โหลด service list จาก `service_list.json`
+2. ใช้ ni2out แยกเสียง AAC จาก ETI stream
+3. ใช้ ffmpeg decode AAC → PCM WAV
+4. เล่นเสียงผ่าน PyAudio (3.5mm jack)
+
+**Output:**
+- `extracted_audio/service_0xA001_*.aac` - AAC audio (178 KB, ~10 seconds)
+- `extracted_audio/service_0xA001_*_pcm.wav` - PCM audio (4.8 MB, 48kHz stereo)
+- `slideshow_images/*.png` - Mock slideshow images (demo)
+
+**คำสั่งที่ใช้ภายใน:**
+```bash
+# Extract audio
+/home/pi/DAB_Plus_Labs/eti/ni2out -i dab_ensemble.eti -s 0xa001 > output.aac
+
+# Decode to PCM
+ffmpeg -i output.aac -f wav -acodec pcm_s16le -ar 48000 -ac 2 output.wav
+```
+
+**หมายเหตุสำคัญ - MOT Slideshow Extraction:**
+
+⚠️ **ni2out ไม่รองรับ MOT extraction** - ni2out เป็นเครื่องมือสำหรับแยกเสียงเท่านั้น
+
+**วิธีดู MOT slideshow จริง:**
+1. **dablin_gtk** (แนะนำ):
+   ```bash
+   dablin_gtk -i dab_ensemble.eti
+   ```
+   - แสดง MOT slideshow ใน GUI
+   - ไม่มี CLI export option
+
+2. **XPADxpert** (Java tool):
+   ```bash
+   java -jar XPADxpert.jar dab_ensemble.eti
+   ```
+   - วิเคราะห์ ETI และ MOT data
+   - บันทึก slides ผ่าน GUI (double-click)
+   - ดาวน์โหลด: https://www.basicmaster.de/xpadxpert/
+
+3. **welle-io**:
+   ```bash
+   welle-io
+   ```
+   - GUI application สำหรับ DAB reception
+   - รองรับ MOT slideshow display
+
+**สำหรับ lab นี้:**
+- ใช้ **mock/demo images** เพื่อแสดง concept
+- นักศึกษาสามารถใช้ dablin_gtk/XPADxpert ดู MOT จริง
 
 ### Phase 5: Complete GUI
 
 #### ขั้นตอนที่ 5: GUI Application (lab3_5.py)
-1. **สร้าง main window** ด้วย PyQt5
-2. **แสดงรายการ services** แบบ touch-friendly
-3. **ควบคุมการเล่นเสียง** และปรับระดับเสียง
-4. **แสดง spectrum analyzer** และ signal quality
-5. **แสดง slideshow** และ real-time information
+```bash
+cd /home/pi/DAB_Plus_Labs/Labs/Lab3
 
-## การเขียนโค้ด
+# Run GUI application
+python3 lab3_5.py
 
-### ส่วนที่ต้องเติมใน lab3_1a.py:
-- `setup_rtlsdr()`: เชื่อมต่อและตั้งค่า RTL-SDR
-- `capture_samples()`: รับ I/Q samples และบันทึกไฟล์
-- `analyze_spectrum()`: วิเคราะห์สเปกตรัม FFT
+# Run fullscreen (สำหรับ 7" touchscreen)
+python3 lab3_5.py --fullscreen
+```
 
-### ส่วนที่ต้องเติมใน lab3_1b.py:
-- `connect()`: เชื่อมต่อ TCP กับ rtl_tcp server
-- `set_frequency()`, `set_sample_rate()`, `set_gain()`: ส่งคำสั่งควบคุม
-- `receive_samples()`: รับ I/Q data ผ่าน network
+**Features:**
+1. **Service List Widget**: โหลดจาก service_list.json
+2. **Audio Control**: Real extraction ด้วย ni2out + PyAudio
+3. **Spectrum Analyzer**: Real-time visualization (pyqtgraph)
+4. **Signal Quality**: SNR, BER, signal strength indicators
+5. **Slideshow Viewer**: MOT images (mock/demo)
+6. **Settings Panel**: RTL-SDR configuration
 
-### ส่วนที่ต้องเติมใน lab3_2.py:
-- `check_eti_cmdline()`: ตรวจสอบการติดตั้ง eti-cmdline
-- `run_eti_cmdline()`: เรียกใช้และติดตาม eti-cmdline process
-- `analyze_eti_output()`: วิเคราะห์ไฟล์ ETI ที่ได้
+**Integration:**
+- Import `DABServicePlayer` จาก lab3_4.py
+- Real audio extraction ด้วย ni2out
+- QMediaPlayer สำหรับ playback
+- PyQt5 GUI framework
 
-### ส่วนที่ต้องเติมใน lab3_3.py:
-- `parse_eti_header()`: แยก ETI frame header
-- `extract_fic_data()`: แยก Fast Information Channel
-- `parse_service_information()`: แยกข้อมูล services และ subchannels
+## Data Flow Pipeline
 
-### ส่วนที่ต้องเติมใน lab3_4.py:
-- `load_service_list()`: โหลดรายการ services จาก JSON
-- `extract_audio_data()`: แยกเสียง AAC จาก ETI
-- `play_audio()`: เล่นเสียงผ่าน PyAudio
-- `extract_slideshow_images()`: แยก MOT slideshow
+```
+RTL-SDR Hardware
+     ↓
+[Lab 3-1a/1b] I/Q Data Acquisition
+     ↓ raw_iq_data.bin
+     ↓
+[Lab 3-2] ETI Stream Creation (eti-cmdline)
+     ↓ dab_ensemble.eti + ensemble-ch-6C.json
+     ↓
+[Lab 3-3] ETI Analysis
+     ↓ service_list.json + subchannel_info.json
+     ↓
+[Lab 3-4] Audio Extraction (ni2out) & Playback
+     ↓ extracted_audio/*.aac + *.wav
+     ↓
+[Lab 3-5] Complete GUI Application (PyQt5)
+     └─→ Integrated player
+```
 
-### ส่วนที่ต้องเติมใน lab3_5.py:
-- `setup_ui()`: สร้าง GUI หลักด้วย PyQt5
-- `DABSignalThread.run()`: ประมวลผลสัญญาณใน background
-- `SpectrumWidget`: แสดง spectrum analyzer
-- `ServiceListWidget`: แสดงรายการ services
-- `AudioControlWidget`: ควบคุมการเล่นเสียง
+## Tool Paths Summary
 
-## ผลลัพธ์ที่คาดหวัง
-
-### Phase 1:
-- ไฟล์ `raw_iq_data.bin` และ `networked_iq_data.bin`
-- กราฟสเปกตรัมความถี่
-- ข้อมูล signal strength และ quality
-
-### Phase 2:
-- ไฟล์ `dab_ensemble.eti` ขนาดประมาณ 6144 * จำนวน frames
-- สถานะ sync และ error rate จาก eti-cmdline
-- ETI frames ที่สามารถ parse ได้
-
-### Phase 3:
-- ไฟล์ `service_list.json` และ `subchannel_info.json`
-- รายการ DAB+ services ที่พบ
-- ข้อมูล bitrate และ codec type ของแต่ละ service
-
-### Phase 4:
-- ไฟล์ `decoded_audio.wav`
-- โฟลเดอร์ `slideshow_images/` พร้อมภาพ
-- การเล่นเสียงผ่าน 3.5mm jack
-- แสดง Dynamic Label Segment (DLS)
-
-### Phase 5:
-- GUI application ที่ทำงานบน 7" touchscreen
-- Real-time spectrum analyzer
-- Touch-friendly service selection
-- Audio player controls
-- Slideshow viewer
-- Signal quality indicators
+| Tool | Path | Purpose |
+|------|------|---------|
+| eti-cmdline | `/home/pi/DAB_Plus_Labs/eti/eti-cmdline` | I/Q → ETI conversion |
+| ni2out | `/home/pi/DAB_Plus_Labs/eti/ni2out` | ETI → Audio extraction |
+| dablin | `/usr/bin/dablin` | ETI playback (CLI) |
+| dablin_gtk | `/usr/bin/dablin_gtk` | ETI playback + MOT viewer (GUI) |
+| welle-io | `/usr/bin/welle-io` | DAB+ receiver (GUI) |
 
 ## การแก้ไขปัญหา
 
@@ -214,16 +332,28 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
 
-### ปัญหา eti-cmdline build failures:
+### ปัญหา eti-cmdline not found:
 ```bash
-# ติดตั้ง missing dependencies
-sudo apt install -y libfftw3-dev libsndfile1-dev pkg-config
+# ตรวจสอบว่า binary อยู่ที่ไหน
+ls -la /home/pi/DAB_Plus_Labs/eti/eti-cmdline
 
-# ใช้ cmake version ใหม่
-sudo apt install -y cmake
+# ถ้าไม่มี ให้ compile ใหม่
+cd ~/eti-stuff/build
+make
+cp eti-cmdline-rtlsdr /home/pi/DAB_Plus_Labs/eti/eti-cmdline
+chmod +x /home/pi/DAB_Plus_Labs/eti/eti-cmdline
+```
 
-# ตรวจสอบ compiler
-gcc --version
+### ปัญหา ni2out not found:
+```bash
+# ตรวจสอบว่า binary อยู่ที่ไหน
+ls -la /home/pi/DAB_Plus_Labs/eti/ni2out
+
+# ถ้าไม่มี ให้ compile ใหม่
+cd ~/eti-tools
+make
+cp ni2out /home/pi/DAB_Plus_Labs/eti/ni2out
+chmod +x /home/pi/DAB_Plus_Labs/eti/ni2out
 ```
 
 ### ปัญหา Audio dropouts:
@@ -245,10 +375,9 @@ echo 'gpu_mem=128' | sudo tee -a /boot/config.txt
 
 # ปิด unnecessary services
 sudo systemctl disable bluetooth
-sudo systemctl disable wifi-powersave@wlan0.service
 
 # ตั้งค่า Qt scaling
-export QT_SCALE_FACTOR=1.2
+export QT_SCALE_FACTOR=1.0
 ```
 
 ### ปัญหา Touchscreen calibration:
@@ -265,10 +394,10 @@ echo 'display_rotate=2' | sudo tee -a /boot/config.txt
 
 1. **I/Q Data Processing**: อธิบายความแตกต่างระหว่างการรับข้อมูลจาก pyrtlsdr และ rtl_tcp client
 2. **ETI Stream Format**: ETI frame มีขนาดกี่ bytes และแต่ละ frame มี logical time เท่าไหร่?
-3. **DAB+ vs DAB**: ความแตกต่างหลักระหว่าง DAB และ DAB+ คืออะไร?
+3. **Tool Chain**: อธิบาย workflow จาก RTL-SDR → eti-cmdline → ni2out → audio output
 4. **Signal Quality**: ปัจจัยใดบ้างที่ส่งผลต่อคุณภาพสัญญาณ DAB+?
-5. **Audio Codec**: DAB+ ใช้ audio codec อะไร และมี bitrate เท่าไหร่?
-6. **MOT Slideshow**: MOT ย่อมาจากอะไร และมีวัตถุประสงค์อย่างไร?
+5. **Audio Codec**: DAB+ ใช้ audio codec อะไร และมี bitrate ทั่วไปเท่าไหร่?
+6. **MOT Slideshow**: ni2out สามารถ extract MOT slideshow ได้หรือไม่? ใช้เครื่องมือใดแทน?
 7. **FIC vs MSC**: อธิบายหน้าที่ของ Fast Information Channel และ Main Service Channel
 8. **GUI Design**: ออกแบบ GUI ให้เหมาะกับ touchscreen ต้องคำนึงถึงอะไรบ้าง?
 
@@ -289,6 +418,17 @@ ETI Frame (6144 bytes total):
 ├── NST (1 byte) - Number of streams
 ├── FIC (32 bytes × 3) - Fast Information Channel
 └── MSC (remaining bytes) - Main Service Channel
+```
+
+### Audio Extraction Process:
+```
+ETI File (dab_ensemble.eti)
+     ↓ ni2out -i input.eti -s 0xa001
+AAC Audio Stream (HE-AAC, 48kHz)
+     ↓ ffmpeg -i input.aac -f wav -acodec pcm_s16le
+PCM WAV (48kHz, 16-bit, stereo)
+     ↓ PyAudio
+Audio Output (3.5mm jack)
 ```
 
 ### Performance Optimization สำหรับ Pi 4:
@@ -316,3 +456,33 @@ RTL-SDR V4 → USB 3.0 → Raspberry Pi 4
 Pi 4 → HDMI → 7" Touchscreen (800×480)
      → 3.5mm → Headphones/Speaker
 ```
+
+## สรุป Workflow ทั้งหมด
+
+```bash
+# Step 1: Capture I/Q data
+cd /home/pi/DAB_Plus_Labs/Labs/Lab3
+python3 lab3_1a.py                    # → raw_iq_data.bin
+
+# Step 2: Create ETI stream
+python3 lab3_2.py                     # → dab_ensemble.eti + ensemble-ch-6C.json
+
+# Step 3: Analyze ETI
+python3 lab3_3.py                     # → service_list.json
+
+# Step 4: Extract & play audio
+python3 lab3_4.py -l                  # List services
+python3 lab3_4.py -s 0xa001          # Play service
+python3 lab3_4.py --mot-info         # MOT extraction info
+
+# Step 5: Run GUI application
+python3 lab3_5.py                     # Complete GUI receiver
+```
+
+## ข้อควรระวัง
+
+1. **eti-cmdline path**: ต้องใช้ `/home/pi/DAB_Plus_Labs/eti/eti-cmdline` (ไม่ใช่ system-wide install)
+2. **ni2out path**: ต้องใช้ `/home/pi/DAB_Plus_Labs/eti/ni2out`
+3. **MOT extraction**: ni2out **ไม่รองรับ** MOT - ใช้ dablin_gtk หรือ XPADxpert แทน
+4. **Audio format**: ni2out output เป็น AAC (HE-AAC) ต้อง decode ด้วย ffmpeg ก่อนเล่น
+5. **Service ID format**: รองรับทั้ง hex (0xa001) และ decimal (40961)
